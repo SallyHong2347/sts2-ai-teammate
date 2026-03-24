@@ -40,14 +40,14 @@ public static class MainMenuAiTeammatePatch
 
     private static void AddAiTeammateButton(NMainMenu mainMenu)
     {
-        var buttonContainer = ((Node)mainMenu).GetNode<Control>(NodePath.op_Implicit("%MainMenuTextButtons"));
-        if (((Node)buttonContainer).GetNodeOrNull<NMainMenuTextButton>(NodePath.op_Implicit(ButtonName)) != null)
+        var buttonContainer = ((Node)mainMenu).GetNode<Control>("%MainMenuTextButtons");
+        if (((Node)buttonContainer).GetNodeOrNull<NMainMenuTextButton>(ButtonName) != null)
         {
             return;
         }
 
-        var multiplayerButton = ((Node)mainMenu).GetNode<NMainMenuTextButton>(NodePath.op_Implicit("MainMenuTextButtons/MultiplayerButton"));
-        var compendiumButton = ((Node)mainMenu).GetNode<NMainMenuTextButton>(NodePath.op_Implicit("MainMenuTextButtons/CompendiumButton"));
+        var multiplayerButton = ((Node)mainMenu).GetNode<NMainMenuTextButton>("MainMenuTextButtons/MultiplayerButton");
+        var compendiumButton = ((Node)mainMenu).GetNode<NMainMenuTextButton>("MainMenuTextButtons/CompendiumButton");
 
         var aiButton = (NMainMenuTextButton)((Node)multiplayerButton).Duplicate(14);
         ((Node)aiButton).Name = ButtonName;
@@ -56,7 +56,7 @@ public static class MainMenuAiTeammatePatch
 
         ConfigureLabel(aiButton);
         ConfigureFocus(mainMenu, multiplayerButton, aiButton, compendiumButton);
-        ConnectSignals(mainMenu, aiButton);
+        ConnectSignals(aiButton);
 
         Log.Info("[AITeammate] Main menu button created.");
     }
@@ -85,20 +85,25 @@ public static class MainMenuAiTeammatePatch
         ((GodotObject)aiButton).Connect(
             NClickableControl.SignalName.Unfocused,
             Callable.From<NMainMenuTextButton>((Action<NMainMenuTextButton>)(button =>
-                UnfocusedHandler.Invoke(mainMenu, new object[] { button }))),
+            {
+                UnfocusedHandler.Invoke(mainMenu, new object[] { button });
+            })),
             0u);
 
         ((GodotObject)aiButton).Connect(
             NClickableControl.SignalName.Focused,
             Callable.From<NMainMenuTextButton>((Action<NMainMenuTextButton>)(button =>
             {
-                var callable = Callable.From(() => FocusedHandler.Invoke(mainMenu, new object[] { button }));
+                var callable = Callable.From(() =>
+                {
+                    FocusedHandler.Invoke(mainMenu, new object[] { button });
+                });
                 callable.CallDeferred(Array.Empty<Variant>());
             })),
             0u);
     }
 
-    private static void ConnectSignals(NMainMenu mainMenu, NMainMenuTextButton aiButton)
+    private static void ConnectSignals(NMainMenuTextButton aiButton)
     {
         ((GodotObject)aiButton).Connect(
             NClickableControl.SignalName.Released,
@@ -109,6 +114,15 @@ public static class MainMenuAiTeammatePatch
     private static void OnAiTeammateButtonPressed()
     {
         Log.Info("[AITeammate] Button clicked.");
-        ((Node)(object)NGame.Instance).AddChildSafely((Node?)(object)NFullscreenTextVfx.Create("AI Teammate placeholder"));
+
+        var game = NGame.Instance;
+        if (game == null)
+        {
+            Log.Warn("[AITeammate] Could not show placeholder message because NGame.Instance was null.");
+            return;
+        }
+
+        var placeholderVfx = NFullscreenTextVfx.Create("AI Teammate placeholder");
+        ((Node)game).AddChildSafely(placeholderVfx);
     }
 }
