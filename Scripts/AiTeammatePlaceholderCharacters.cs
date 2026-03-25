@@ -1,10 +1,26 @@
 using System;
 using System.Collections.Generic;
 using Godot;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Characters;
 
 namespace AITeammate.Scripts;
 
-internal readonly record struct AiTeammatePlaceholderCharacter(string Id, string DisplayName, string TexturePath);
+internal readonly record struct AiTeammatePlaceholderCharacter(string Id, string DisplayName, string TexturePath)
+{
+    public CharacterModel ResolveModel()
+    {
+        return Id switch
+        {
+            "ironclad" => ModelDb.Character<Ironclad>(),
+            "silent" => ModelDb.Character<Silent>(),
+            "defect" => ModelDb.Character<Defect>(),
+            "regent" => ModelDb.Character<Regent>(),
+            "necrobinder" => ModelDb.Character<Necrobinder>(),
+            _ => throw new InvalidOperationException($"Unknown AI teammate character id: {Id}")
+        };
+    }
+}
 
 internal static class AiTeammatePlaceholderCharacters
 {

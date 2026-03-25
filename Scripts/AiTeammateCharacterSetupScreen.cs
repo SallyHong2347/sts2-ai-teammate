@@ -1,20 +1,33 @@
 using System;
 using System.Collections.Generic;
 using Godot;
+using HarmonyLib;
+using MegaCrit.Sts2.Core.Entities.Multiplayer;
 using MegaCrit.Sts2.Core.Logging;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Multiplayer.Game;
+using MegaCrit.Sts2.Core.Multiplayer.Game.Lobby;
+using MegaCrit.Sts2.Core.Nodes.Multiplayer;
 using MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
+using MegaCrit.Sts2.Core.Saves;
 
 namespace AITeammate.Scripts;
 
-public partial class AiTeammateCharacterSetupScreen : NSubmenu
+public partial class AiTeammateCharacterSetupScreen : NSubmenu, IStartRunLobbyListener
 {
     private const int DuplicateNodeFlags = 14;
+    private const int MaxPlayerCount = 5;
     private const string BackButtonNodeName = "BackButton";
     private const string ContentPanelNodeName = "AiTeammateContentPanel";
     private const string PickerScreenNodeName = "AiTeammateSlotCharacterPickerScreen";
     private const string AscensionPanelNodeName = "AscensionPanel";
     private const string UniqueAscensionPanelNodePath = "%AscensionPanel";
+    private const string RemotePlayerContainerNodeName = "RemotePlayerContainer";
+    private const string SessionPanelNodeName = "AiTeammateSessionPanel";
+    private const string SessionSummaryNodeName = "AiTeammateSessionSummary";
+    private const string SessionHintNodeName = "AiTeammateSessionHint";
+    private const string ProceedButtonNodeName = "AiTeammateProceedButton";
     private const float ContentPanelVerticalShift = 170f;
     private static readonly Vector2 BackButtonPivotOffset = new(20f, 40f);
     private static readonly Vector2 AscensionPanelPosition = new(-317f, -341f);
@@ -29,6 +42,10 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu
     private static readonly Color PortraitPanelColor = new(0.07f, 0.11f, 0.16f, 1f);
     private static readonly Color RemoveButtonColor = new(0.72f, 0.18f, 0.18f, 0.98f);
     private static readonly Color RemoveButtonHoverColor = new(0.82f, 0.22f, 0.22f, 1f);
+    private static readonly Color SessionPanelColor = new(0.10f, 0.14f, 0.20f, 0.94f);
+    private static readonly Color ProceedButtonColor = new(0.75f, 0.60f, 0.16f, 1f);
+    private static readonly Color ProceedButtonHoverColor = new(0.85f, 0.69f, 0.20f, 1f);
+    private static readonly Color ProceedButtonDisabledColor = new(0.38f, 0.38f, 0.38f, 1f);
 
     private readonly Dictionary<int, Button> _slotButtons = new();
     private readonly Dictionary<int, TextureRect> _slotPortraits = new();
@@ -41,6 +58,17 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu
     private NSingleplayerSubmenu? _sourceSingleplayerSubmenu;
     private NCharacterSelectScreen? _sourceCharacterSelectScreen;
     private AiTeammateSlotCharacterPickerScreen? _pickerScreen;
+    private NRemoteLobbyPlayerContainer? _remoteLobbyPlayerContainer;
+    private Label? _sessionSummaryLabel;
+    private Label? _sessionHintLabel;
+    private Button? _proceedButton;
+    private AiTeammateSessionState? _sessionState;
+    private AiTeammateLoopbackHostGameService? _loopbackService;
+    private StartRunLobby? _lobby;
+    private NAscensionPanel? _ascensionPanel;
+    private int _selectedAscensionLevel;
+    private bool _isSyncingAscensionPanel;
+    private bool _isStartingRun;
 
     protected override Control? InitialFocusedControl => null;
 
@@ -63,12 +91,23 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu
     public override void OnSubmenuOpened()
     {
         Log.Info("[AITeammate] AI teammate setup page opened.");
+        RefreshSessionFromSelections();
+    }
+
+    public override void OnSubmenuClosed()
+    {
+        base.OnSubmenuClosed();
+        if (!_isStartingRun)
+        {
+            CleanupActiveLobby(disconnectSession: true, clearSessionRegistry: true);
+        }
     }
 
     private void BuildFallbackLayout(NSingleplayerSubmenu sourceSingleplayerSubmenu, NCharacterSelectScreen? sourceCharacterSelectScreen)
     {
         _sourceSingleplayerSubmenu = sourceSingleplayerSubmenu;
         _sourceCharacterSelectScreen = sourceCharacterSelectScreen;
+        _selectedAscensionLevel = SaveManager.Instance.Progress.PreferredMultiplayerAscension;
 
         LayoutMode = sourceSingleplayerSubmenu.LayoutMode;
         AnchorLeft = sourceSingleplayerSubmenu.AnchorLeft;
@@ -105,29 +144,31 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu
         }
 
         AddChild(duplicate);
-        BuildPlaceholderSlotsUi();
+        Control contentPanel = BuildPlaceholderSlotsUi();
+        BuildSessionUi(contentPanel, sourceCharacterSelectScreen);
         BuildPlaceholderAscensionPanel(sourceCharacterSelectScreen);
         Log.Info("[AITeammate] AI teammate setup screen created from fallback layout with the stock back button.");
     }
 
-    private void BuildPlaceholderSlotsUi()
+    private Control BuildPlaceholderSlotsUi()
     {
-        if (GetNodeOrNull<Control>(ContentPanelNodeName) != null)
+        Control? existing = GetNodeOrNull<Control>(ContentPanelNodeName);
+        if (existing != null)
         {
-            return;
+            return existing;
         }
 
         var contentPanel = new Panel
         {
             Name = ContentPanelNodeName,
-            CustomMinimumSize = new Vector2(1240f, 420f),
+            CustomMinimumSize = new Vector2(1240f, 640f),
             MouseFilter = MouseFilterEnum.Stop
         };
         contentPanel.SetAnchorsPreset(LayoutPreset.Center);
         contentPanel.OffsetLeft = -620f;
-        contentPanel.OffsetTop = -210f - ContentPanelVerticalShift;
+        contentPanel.OffsetTop = -320f - ContentPanelVerticalShift;
         contentPanel.OffsetRight = 620f;
-        contentPanel.OffsetBottom = 210f - ContentPanelVerticalShift;
+        contentPanel.OffsetBottom = 320f - ContentPanelVerticalShift;
         contentPanel.AddThemeStyleboxOverride("panel", CreatePanelStyle(PageBackgroundColor, ContentPanelBorderColor, 6, 22));
         AddChild(contentPanel);
 
@@ -147,34 +188,37 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu
 
         var subtitle = new Label
         {
-            Text = "Select a slot to assign a placeholder teammate.",
+            Text = "Choose a real host character and any AI teammates, then reuse the multiplayer lobby start flow.",
             HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart
         };
         subtitle.SetAnchorsPreset(LayoutPreset.TopWide);
-        subtitle.OffsetLeft = 40f;
+        subtitle.OffsetLeft = 60f;
         subtitle.OffsetTop = 74f;
-        subtitle.OffsetRight = -40f;
-        subtitle.OffsetBottom = 108f;
+        subtitle.OffsetRight = -60f;
+        subtitle.OffsetBottom = 120f;
         subtitle.Modulate = new Color(0.88f, 0.93f, 0.97f, 0.85f);
         contentPanel.AddChild(subtitle);
 
         var slotsRow = new HBoxContainer();
         slotsRow.AddThemeConstantOverride("separation", 18);
-        slotsRow.SetAnchorsPreset(LayoutPreset.FullRect);
+        slotsRow.SetAnchorsPreset(LayoutPreset.TopWide);
         slotsRow.OffsetLeft = 42f;
-        slotsRow.OffsetTop = 130f;
+        slotsRow.OffsetTop = 136f;
         slotsRow.OffsetRight = -42f;
-        slotsRow.OffsetBottom = -42f;
+        slotsRow.OffsetBottom = 360f;
         contentPanel.AddChild(slotsRow);
 
-        slotsRow.AddChild(CreateSlotButton(0, "Human Player", string.Empty, allowPicker: true));
+        slotsRow.AddChild(CreateSlotButton(0, "Human Player", "Required", allowPicker: true));
         slotsRow.AddChild(CreateDivider());
 
         for (var slotIndex = 1; slotIndex < 5; slotIndex++)
         {
-            slotsRow.AddChild(CreateSlotButton(slotIndex, $"AI Player {slotIndex}", string.Empty, allowPicker: true));
+            slotsRow.AddChild(CreateSlotButton(slotIndex, $"AI Player {slotIndex}", "Optional", allowPicker: true));
         }
+
+        return contentPanel;
     }
 
     private Button CreateSlotButton(int slotIndex, string title, string subtitle, bool allowPicker)
@@ -333,6 +377,14 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu
         }
 
         AddChild(duplicate);
+        if (duplicate is NAscensionPanel ascensionPanel)
+        {
+            _ascensionPanel = ascensionPanel;
+            ((GodotObject)ascensionPanel).Connect(
+                NAscensionPanel.SignalName.AscensionLevelChanged,
+                Callable.From((Action)OnAscensionPanelLevelChanged),
+                0u);
+        }
     }
 
     public void ApplyAiSlotSelection(int slotIndex, string characterId)
@@ -344,6 +396,7 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu
 
         _slotSelections[slotIndex] = characterId;
         UpdateAiSlotVisual(slotIndex, character);
+        RefreshSessionFromSelections();
     }
 
     public void ClearAiSlotSelection(int slotIndex)
@@ -355,7 +408,8 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu
 
         _slotSelections.Remove(slotIndex);
         ResetAiSlotVisual(slotIndex);
-        Log.Info($"[AITeammate] Cleared placeholder character from AI slot {slotIndex}.");
+        RefreshSessionFromSelections();
+        Log.Info($"[AITeammate] Cleared character selection from slot {slotIndex}.");
     }
 
     private void OpenCharacterPicker(int slotIndex)
@@ -397,7 +451,7 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu
 
         if (_slotSubtitles.TryGetValue(slotIndex, out var subtitleLabel))
         {
-            subtitleLabel.Text = string.Empty;
+            subtitleLabel.Text = slotIndex == 0 ? "Host" : "AI teammate";
         }
 
         RefreshSlotRemoveButton(slotIndex);
@@ -418,7 +472,7 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu
 
         if (_slotSubtitles.TryGetValue(slotIndex, out var subtitleLabel))
         {
-            subtitleLabel.Text = string.Empty;
+            subtitleLabel.Text = slotIndex == 0 ? "Required" : "Optional";
         }
 
         RefreshSlotRemoveButton(slotIndex);
@@ -507,6 +561,47 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu
         control.PivotOffset = Vector2.Zero;
         control.Scale = Vector2.One;
         control.Visible = true;
+    }
+
+    private void OnAscensionPanelLevelChanged()
+    {
+        if (_isSyncingAscensionPanel || _ascensionPanel == null)
+        {
+            return;
+        }
+
+        int targetAscension = _ascensionPanel.Ascension;
+        _selectedAscensionLevel = targetAscension;
+
+        if (_lobby != null && _lobby.NetService.Type != NetGameType.Client && _lobby.Ascension != targetAscension)
+        {
+            _lobby.SyncAscensionChange(targetAscension);
+            _selectedAscensionLevel = _lobby.Ascension;
+        }
+    }
+
+    private void RefreshAscensionPanelState()
+    {
+        if (_ascensionPanel == null || !GodotObject.IsInstanceValid(_ascensionPanel) || !_ascensionPanel.IsNodeReady())
+        {
+            return;
+        }
+
+        int maxAscension = _lobby?.MaxAscension ?? 0;
+        int ascension = Math.Clamp(_lobby?.Ascension ?? _selectedAscensionLevel, 0, maxAscension);
+
+        _isSyncingAscensionPanel = true;
+        try
+        {
+            _ascensionPanel.SetMaxAscension(maxAscension);
+            _ascensionPanel.SetAscensionLevel(ascension);
+        }
+        finally
+        {
+            _isSyncingAscensionPanel = false;
+        }
+
+        _selectedAscensionLevel = ascension;
     }
 
     private static StyleBoxFlat CreatePanelStyle(Color backgroundColor, Color borderColor, int borderWidth, int cornerRadius)

@@ -24,45 +24,9 @@ The goal is to maintain steady progress with small, verifiable steps.
 
 ---
 
-## Game folder usage
-We use a separate ModDev copy of the game:
-
-C:\Program Files (x86)\Steam\steamapps\common\Slay the Spire 2 - ModDev
-
-Rules:
-- Treat this as the working game directory.
-- Do not modify the original Steam installation.
-- Minimize changes inside the ModDev folder.
-- Prefer creating new helper/debug files instead of modifying original ones.
-- Clearly name helper files (e.g., *_dev.bat, *_debug.log).
-
----
-
-## Decompiled code usage (VERY IMPORTANT)
-A full decompiled version of the game is available at:
-
-C:\Users\hongs\Desktop\dev\sts2Code\sts2DecomposedCode
-
-Rules:
-- Always refer to this codebase when:
-  - searching for classes
-  - identifying UI/menu logic
-  - finding patch points
-  - understanding game structure
-- Prefer using real class/method names from the decompiled code instead of guessing.
-- Do not rely only on assumptions or generic patterns.
-- When selecting a patch point:
-  - identify the exact class and method from the decompiled code
-  - briefly explain why it is a good target
-
----
 
 ## Documentation maintenance
 Always ensure a `docs/` folder exists.
-
-Maintain only these files:
-- `docs/debugging-notes.md`
-- `docs/modding-decisions.md`
 
 ### debugging-notes.md
 Keep short, practical notes:
