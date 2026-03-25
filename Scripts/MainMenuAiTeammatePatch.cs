@@ -5,6 +5,7 @@ using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
+using MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 
 namespace AITeammate.Scripts;
@@ -149,7 +150,8 @@ public static class MainMenuAiTeammatePatch
                 return;
             }
 
-            screen = AiTeammateCharacterSetupScreen.CreateFromTemplate(sourceSingleplayerSubmenu, ScreenNodeName);
+            var sourceCharacterSelectScreen = submenuStack.GetSubmenuType<NCharacterSelectScreen>();
+            screen = AiTeammateCharacterSetupScreen.CreateFromTemplate(sourceSingleplayerSubmenu, sourceCharacterSelectScreen, ScreenNodeName);
             ((CanvasItem)screen).Visible = false;
             ((Node)(object)submenuStack).AddChild(screen);
         }

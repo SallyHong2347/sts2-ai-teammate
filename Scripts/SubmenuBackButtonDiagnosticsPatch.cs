@@ -46,6 +46,8 @@ public static class SubmenuBackButtonDiagnosticsPatch
 
         var backButton = ((Node)screen).GetNodeOrNull<NBackButton>("BackButton");
         var backButtonParent = backButton != null ? ((Node)backButton).GetParent() as Control : null;
+        var ascensionPanel = ((Node)screen).GetNodeOrNull<Control>("AscensionPanel") ?? ((Node)screen).GetNodeOrNull<Control>("%AscensionPanel");
+        var ascensionPanelParent = ascensionPanel != null ? ((Node)ascensionPanel).GetParent() as Control : null;
         var window = ((Node)screen).GetWindow();
         var windowContentSize = window?.ContentScaleSize ?? Vector2I.Zero;
         Log.Info(
@@ -54,6 +56,8 @@ public static class SubmenuBackButtonDiagnosticsPatch
             $"screen={DescribeControl(screen)} " +
             $"backButton={(backButton == null ? "missing" : DescribeControl(backButton))} " +
             $"backButtonParent={(backButtonParent == null ? "missing" : DescribeControl(backButtonParent))} " +
+            $"ascensionPanel={(ascensionPanel == null ? "missing" : DescribeControl(ascensionPanel))} " +
+            $"ascensionPanelParent={(ascensionPanelParent == null ? "missing" : DescribeControl(ascensionPanelParent))} " +
             $"windowContentSize={windowContentSize}");
     }
 
@@ -85,6 +89,7 @@ public static class SubmenuBackButtonDiagnosticsPatch
             $"position={control.Position}, " +
             $"global={control.GlobalPosition}, " +
             $"size={control.Size}, " +
-            $"scale={control.Scale}";
+            $"scale={control.Scale}, " +
+            $"modulate={control.Modulate}";
     }
 }
