@@ -1,13 +1,11 @@
 using System;
 using Godot;
 using HarmonyLib;
-using MegaCrit.Sts2.addons.mega_text;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
-using MegaCrit.Sts2.Core.Nodes.Vfx;
 
 namespace AITeammate.Scripts;
 
@@ -16,7 +14,7 @@ public static class MainMenuAiTeammatePatch
 {
     private const string ButtonName = "AiTeammateButton";
     private const string ButtonLabel = "Play with AI Teammate";
-
+    private const string ScreenNodeName = "AiTeammateCharacterSetupScreen";
     private static readonly System.Reflection.MethodInfo FocusedHandler =
         AccessTools.Method(typeof(NMainMenu), "MainMenuButtonFocused")!;
 
@@ -25,6 +23,9 @@ public static class MainMenuAiTeammatePatch
 
     private static readonly System.Reflection.FieldInfo LocStringField =
         AccessTools.Field(typeof(NMainMenuTextButton), "_locString")!;
+
+    private static readonly System.Reflection.FieldInfo LastHitButtonField =
+        AccessTools.Field(typeof(NMainMenu), "_lastHitButton")!;
 
     public static void Postfix(NMainMenu __instance)
     {
@@ -64,9 +65,16 @@ public static class MainMenuAiTeammatePatch
     private static void ConfigureLabel(NMainMenuTextButton aiButton)
     {
         LocStringField.SetValue(aiButton, null);
-        var label = ((Node)aiButton).GetChild<MegaLabel>(0, false);
-        label.SetTextAutoSize(ButtonLabel);
-        ((Control)label).PivotOffset = ((Control)label).Size * 0.5f;
+
+        var labelNode = ((Node)aiButton).GetChild(0, false);
+        if (labelNode is not Label label)
+        {
+            Log.Warn("[AITeammate] Could not relabel the AI teammate menu button because its label node was not a Godot Label.");
+            return;
+        }
+
+        label.Text = ButtonLabel;
+        label.PivotOffset = label.Size * 0.5f;
     }
 
     private static void ConfigureFocus(
@@ -107,22 +115,45 @@ public static class MainMenuAiTeammatePatch
     {
         ((GodotObject)aiButton).Connect(
             NClickableControl.SignalName.Released,
-            Callable.From<NButton>((Action<NButton>)(_ => OnAiTeammateButtonPressed())),
+            Callable.From<NButton>((Action<NButton>)(_ => OnAiTeammateButtonPressed(aiButton))),
             0u);
     }
 
-    private static void OnAiTeammateButtonPressed()
+    private static void OnAiTeammateButtonPressed(NMainMenuTextButton aiButton)
     {
         Log.Info("[AITeammate] Button clicked.");
 
-        var game = NGame.Instance;
-        if (game == null)
+        var buttonContainer = ((Node)aiButton).GetParent();
+        var mainMenu = buttonContainer?.GetParent() as NMainMenu;
+        if (mainMenu == null)
         {
-            Log.Warn("[AITeammate] Could not show placeholder message because NGame.Instance was null.");
+            Log.Warn("[AITeammate] Could not open AI teammate setup page because the main menu was not found.");
             return;
         }
 
-        var placeholderVfx = NFullscreenTextVfx.Create("AI Teammate placeholder");
-        ((Node)game).AddChildSafely(placeholderVfx);
+        OpenAiTeammateSubmenu(mainMenu, aiButton);
+    }
+
+    private static void OpenAiTeammateSubmenu(NMainMenu mainMenu, NMainMenuTextButton aiButton)
+    {
+        LastHitButtonField.SetValue(mainMenu, aiButton);
+
+        var submenuStack = mainMenu.SubmenuStack;
+        var screen = ((Node)submenuStack).GetNodeOrNull<AiTeammateCharacterSetupScreen>(ScreenNodeName);
+        if (screen == null)
+        {
+            var sourceSingleplayerSubmenu = submenuStack.GetSubmenuType<NSingleplayerSubmenu>();
+            if (sourceSingleplayerSubmenu == null)
+            {
+                Log.Warn("[AITeammate] Could not open AI teammate setup page because the stock singleplayer submenu was unavailable.");
+                return;
+            }
+
+            screen = AiTeammateCharacterSetupScreen.CreateFromTemplate(sourceSingleplayerSubmenu, ScreenNodeName);
+            ((CanvasItem)screen).Visible = false;
+            ((Node)(object)submenuStack).AddChild(screen);
+        }
+
+        submenuStack.Push(screen);
     }
 }

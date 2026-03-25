@@ -4,8 +4,8 @@
   "author": "Sally",
   "description": "a local mod-based AI teammate that runs inside (or directly alongside) the player’s own Slay the Spire 2 client.",
   "version": "1.0",
-  "has_pck": false,
+  "has_pck": true,
   "has_dll": true,
-  "dependencies": [""],
+  "dependencies": [],
   "affects_gameplay": true
 }
