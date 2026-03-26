@@ -16,6 +16,7 @@ using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
 using MegaCrit.Sts2.Core.Multiplayer.Game.Lobby;
 using MegaCrit.Sts2.Core.Nodes;
+using MegaCrit.Sts2.Core.Nodes.Audio;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves;
@@ -27,6 +28,9 @@ internal sealed class AiTeammateSaveTagData
 {
     [JsonPropertyName("host_player_id")]
     public ulong HostPlayerId { get; set; }
+
+    [JsonPropertyName("use_test_map")]
+    public bool UseTestMap { get; set; }
 
     [JsonPropertyName("ai_slots")]
     public List<AiTeammateSaveTagSlot> AiSlots { get; set; } = [];
@@ -59,6 +63,7 @@ internal static class AiTeammateSaveSupport
             AiTeammateSaveTagData tagData = new()
             {
                 HostPlayerId = sessionState.HostPlayerId,
+                UseTestMap = sessionState.UseTestMap,
                 AiSlots = sessionState.Participants
                     .Where((participant) => !participant.IsHost)
                     .OrderBy((participant) => participant.SlotIndex)
@@ -190,6 +195,7 @@ internal static class AiTeammateSaveSupport
             NGame game = NGame.Instance ?? throw new InvalidOperationException("NGame.Instance was null while trying to continue the AI teammate run.");
             game.RemoteCursorContainer.Initialize(lobby.InputSynchronizer, lobby.ConnectedPlayerIds);
             game.ReactionContainer.InitializeNetworking(netService);
+            NAudioManager.Instance?.StopMusic();
 
             SerializablePlayer localPlayer = savedRun.SaveData.Players.First((player) => player.NetId == savedRun.SessionState.HostPlayerId);
             if (localPlayer.CharacterId != null)
@@ -242,6 +248,35 @@ internal static class AiTeammateSaveSupport
 
         SaveManager.Instance.DeleteCurrentMultiplayerRun();
         ClearCurrentProfile();
+        AiTeammateSessionRegistry.SetCurrent(null);
+    }
+
+    public static bool IsActiveInProgressRun()
+    {
+        return AiTeammateSessionRegistry.Current != null &&
+               RunManager.Instance.IsInProgress &&
+               RunManager.Instance.NetService is AiTeammateLoopbackHostGameService;
+    }
+
+    public static void PrepareForInProgressAbandon()
+    {
+        if (!IsActiveInProgressRun())
+        {
+            return;
+        }
+
+        Log.Info("[AITeammate] Preparing AI teammate run for in-progress abandon.");
+        ClearCurrentProfile();
+    }
+
+    public static void ClearInMemorySessionIfNeeded()
+    {
+        if (AiTeammateSessionRegistry.Current == null)
+        {
+            return;
+        }
+
+        Log.Info("[AITeammate] Clearing in-memory AI teammate session state.");
         AiTeammateSessionRegistry.SetCurrent(null);
     }
 
@@ -344,7 +379,7 @@ internal static class AiTeammateSaveSupport
             aiControllers[slot.PlayerId] = new AiTeammateDummyController(slot.SlotIndex, slot.PlayerId, character);
         }
 
-        sessionState = new AiTeammateSessionState(tagData.HostPlayerId, participants, aiControllers);
+        sessionState = new AiTeammateSessionState(tagData.HostPlayerId, participants, aiControllers, tagData.UseTestMap);
         return true;
     }
 

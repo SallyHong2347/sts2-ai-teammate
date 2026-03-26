@@ -40,20 +40,22 @@ public partial class AiTeammateSlotCharacterPickerScreen : NSubmenu
         return screen;
     }
 
+    public static AiTeammateSlotCharacterPickerScreen CreateFromSetupScreen(AiTeammateCharacterSetupScreen sourceSetupScreen, string nodeName)
+    {
+        var screen = new AiTeammateSlotCharacterPickerScreen();
+        ((Node)screen).Name = nodeName;
+        screen.BuildLayoutFromSetupScreen(sourceSetupScreen);
+        return screen;
+    }
+
     public override void _Ready()
     {
-        ConnectSignals();
     }
 
     public override void OnSubmenuOpened()
     {
         Log.Info("[AITeammate] AI slot picker page opened.");
         RefreshSelectionState();
-    }
-
-    protected override void OnSubmenuShown()
-    {
-        HideBackButtonImmediately();
     }
 
     public void BeginSelection(AiTeammateCharacterSetupScreen ownerScreen, int slotIndex, string? selectedCharacterId)
@@ -74,19 +76,41 @@ public partial class AiTeammateSlotCharacterPickerScreen : NSubmenu
 
     private void BuildLayout(NSingleplayerSubmenu sourceSingleplayerSubmenu)
     {
-        CopyRootLayoutFrom(sourceSingleplayerSubmenu);
-        DuplicateBackButtonFrom(sourceSingleplayerSubmenu);
+        InitializeStandaloneRoot();
+        AddCustomBackButton();
         BuildContentPanel();
     }
 
-    private void CopyRootLayoutFrom(NSingleplayerSubmenu sourceSingleplayerSubmenu)
+    private void BuildLayoutFromSetupScreen(AiTeammateCharacterSetupScreen sourceSetupScreen)
     {
-        AiTeammateMenuUiFactory.CopySubmenuLayoutFrom(this, sourceSingleplayerSubmenu);
+        InitializeStandaloneRoot();
+        AddCustomBackButton();
+        BuildContentPanel();
     }
 
-    private void DuplicateBackButtonFrom(NSingleplayerSubmenu sourceSingleplayerSubmenu)
+    private void InitializeStandaloneRoot()
     {
-        AiTeammateMenuUiFactory.TryDuplicateStockBackButton(this, sourceSingleplayerSubmenu, "creating the AI slot picker screen");
+        LayoutMode = 1;
+        SetAnchorsPreset(LayoutPreset.FullRect);
+        OffsetLeft = 0f;
+        OffsetTop = 0f;
+        OffsetRight = 0f;
+        OffsetBottom = 0f;
+        GrowHorizontal = GrowDirection.Both;
+        GrowVertical = GrowDirection.Both;
+        MouseFilter = MouseFilterEnum.Stop;
+    }
+
+    private void AddCustomBackButton()
+    {
+        if (GetNodeOrNull<Button>("AiTeammateBackButton") != null)
+        {
+            return;
+        }
+
+        Button backButton = AiTeammateMenuUiFactory.CreateSimpleBackButton();
+        backButton.Pressed += () => _stack?.Pop();
+        AddChild(backButton);
     }
 
     private void BuildContentPanel()

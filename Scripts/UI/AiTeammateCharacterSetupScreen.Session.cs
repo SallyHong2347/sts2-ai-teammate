@@ -10,6 +10,7 @@ using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game.Lobby;
 using MegaCrit.Sts2.Core.Nodes;
+using MegaCrit.Sts2.Core.Nodes.Audio;
 using MegaCrit.Sts2.Core.Nodes.Multiplayer;
 using MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect;
 using MegaCrit.Sts2.Core.Runs;
@@ -72,6 +73,24 @@ public partial class AiTeammateCharacterSetupScreen
         sessionPanel.AddChild(hintLabel);
         _sessionHintLabel = hintLabel;
 
+        CheckBox useTestMapToggle = new()
+        {
+            Name = TestMapToggleNodeName,
+            Text = "Use Test Map",
+            ButtonPressed = _useTestMap,
+            FocusMode = FocusModeEnum.All,
+            MouseFilter = MouseFilterEnum.Stop
+        };
+        useTestMapToggle.SetAnchorsPreset(LayoutPreset.TopLeft);
+        useTestMapToggle.OffsetLeft = 22f;
+        useTestMapToggle.OffsetTop = 94f;
+        useTestMapToggle.OffsetRight = 220f;
+        useTestMapToggle.OffsetBottom = 124f;
+        useTestMapToggle.AddThemeFontSizeOverride("font_size", 18);
+        useTestMapToggle.Toggled += OnUseTestMapToggled;
+        sessionPanel.AddChild(useTestMapToggle);
+        _useTestMapToggle = useTestMapToggle;
+
         if (sourceCharacterSelectScreen != null)
         {
             Node? sourceRemoteContainer = ((Node)sourceCharacterSelectScreen).GetNodeOrNull<Node>(RemotePlayerContainerNodeName);
@@ -83,7 +102,7 @@ public partial class AiTeammateCharacterSetupScreen
                     ((Node)remoteLobbyPlayerContainer).Name = "AiTeammateRemotePlayerContainer";
                     remoteLobbyPlayerContainer.SetAnchorsPreset(LayoutPreset.FullRect);
                     remoteLobbyPlayerContainer.OffsetLeft = 18f;
-                    remoteLobbyPlayerContainer.OffsetTop = 84f;
+                    remoteLobbyPlayerContainer.OffsetTop = 124f;
                     remoteLobbyPlayerContainer.OffsetRight = -18f;
                     remoteLobbyPlayerContainer.OffsetBottom = -18f;
                     sessionPanel.AddChild(remoteLobbyPlayerContainer);
@@ -126,7 +145,7 @@ public partial class AiTeammateCharacterSetupScreen
 
     private void RefreshSessionFromSelections()
     {
-        AiTeammateSessionState? sessionState = AiTeammateSessionState.CreateFromSelections(_slotSelections);
+        AiTeammateSessionState? sessionState = AiTeammateSessionState.CreateFromSelections(_slotSelections, _useTestMap);
         _sessionState = sessionState;
         AiTeammateSessionRegistry.SetCurrent(sessionState);
 
@@ -281,7 +300,7 @@ public partial class AiTeammateCharacterSetupScreen
 
         _sessionSummaryLabel.Text = $"Session participants: {_sessionState.Participants.Count}";
         _sessionHintLabel.Text = _sessionState.AiCount > 0
-            ? $"Host plus {_sessionState.AiCount} local fake remote teammate(s) now share a real StartRunLobby model."
+            ? $"Host plus {_sessionState.AiCount} local fake remote teammate(s) now share a real StartRunLobby model.{(_sessionState.UseTestMap ? " Test map enabled." : string.Empty)}"
             : "Host is ready in the session model. Add at least one AI teammate to enable Proceed.";
     }
 
@@ -319,6 +338,12 @@ public partial class AiTeammateCharacterSetupScreen
         RefreshProceedButtonState();
     }
 
+    private void OnUseTestMapToggled(bool enabled)
+    {
+        _useTestMap = enabled;
+        RefreshSessionFromSelections();
+    }
+
     private async System.Threading.Tasks.Task StartLobbyRunAsync(string seed, List<ActModel> acts, IReadOnlyList<ModifierModel> modifiers)
     {
         if (_lobby == null)
@@ -343,6 +368,7 @@ public partial class AiTeammateCharacterSetupScreen
             }
 
             Log.Info($"[AITeammate] Starting local AI teammate run. host={hostCharacter.Id.Entry}, players={_lobby.Players.Count}, seed={seed}");
+            NAudioManager.Instance?.StopMusic();
             SfxCmd.Play(hostCharacter.CharacterTransitionSfx);
             await NGame.Instance.Transition.FadeOut(0.8f, hostCharacter.CharacterSelectTransitionPath);
             await NGame.Instance.StartNewMultiplayerRun(_lobby, shouldSave: true, acts, modifiers, seed, _lobby.Ascension);

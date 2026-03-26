@@ -167,6 +167,7 @@ public static class MainMenuAiTeammatePatch
 
         var submenuStack = mainMenu.SubmenuStack;
         var screen = GetOrCreateSetupScreen(submenuStack);
+        screen.ResetForFreshEntry();
         submenuStack.Push(screen);
     }
 

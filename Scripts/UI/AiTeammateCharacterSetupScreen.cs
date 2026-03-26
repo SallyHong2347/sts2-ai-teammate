@@ -25,6 +25,7 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu, IStartRunLobbyLi
     private const string SessionPanelNodeName = "AiTeammateSessionPanel";
     private const string SessionSummaryNodeName = "AiTeammateSessionSummary";
     private const string SessionHintNodeName = "AiTeammateSessionHint";
+    private const string TestMapToggleNodeName = "AiTeammateUseTestMapToggle";
     private const string ProceedButtonNodeName = "AiTeammateProceedButton";
     private const float ContentPanelVerticalShift = 170f;
     private static readonly Vector2 AscensionPanelPosition = new(-317f, -341f);
@@ -59,6 +60,7 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu, IStartRunLobbyLi
     private Label? _sessionSummaryLabel;
     private Label? _sessionHintLabel;
     private Button? _proceedButton;
+    private CheckBox? _useTestMapToggle;
     private AiTeammateSessionState? _sessionState;
     private AiTeammateLoopbackHostGameService? _loopbackService;
     private StartRunLobby? _lobby;
@@ -66,6 +68,7 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu, IStartRunLobbyLi
     private int _selectedAscensionLevel;
     private bool _isSyncingAscensionPanel;
     private bool _isStartingRun;
+    private bool _useTestMap;
 
     protected override Control? InitialFocusedControl => null;
 
@@ -82,7 +85,6 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu, IStartRunLobbyLi
 
     public override void _Ready()
     {
-        ConnectSignals();
     }
 
     public override void OnSubmenuOpened()
@@ -100,6 +102,30 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu, IStartRunLobbyLi
         }
     }
 
+    internal void ResetForFreshEntry()
+    {
+        _isStartingRun = false;
+        CleanupActiveLobby(disconnectSession: true, clearSessionRegistry: true);
+        ClearCachedPickerScreen();
+        _slotSelections.Clear();
+        _slotHoverStates.Clear();
+        _slotRemoveHoverStates.Clear();
+
+        for (int slotIndex = 0; slotIndex < MaxPlayerCount; slotIndex++)
+        {
+            ResetAiSlotVisual(slotIndex);
+        }
+
+        _useTestMap = false;
+        if (_useTestMapToggle != null)
+        {
+            _useTestMapToggle.ButtonPressed = false;
+        }
+
+        _selectedAscensionLevel = SaveManager.Instance.Progress.PreferredMultiplayerAscension;
+        RefreshSessionFromSelections();
+    }
+
     private void BuildFallbackLayout(NSingleplayerSubmenu sourceSingleplayerSubmenu, NCharacterSelectScreen? sourceCharacterSelectScreen)
     {
         _sourceSingleplayerSubmenu = sourceSingleplayerSubmenu;
@@ -107,15 +133,23 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu, IStartRunLobbyLi
         _selectedAscensionLevel = SaveManager.Instance.Progress.PreferredMultiplayerAscension;
 
         AiTeammateMenuUiFactory.CopySubmenuLayoutFrom(this, sourceSingleplayerSubmenu);
-
-        if (!AiTeammateMenuUiFactory.TryDuplicateStockBackButton(this, sourceSingleplayerSubmenu, "creating the fallback AI teammate setup screen"))
-        {
-            return;
-        }
+        AddCustomBackButton();
         Control contentPanel = BuildPlaceholderSlotsUi();
         BuildSessionUi(contentPanel, sourceCharacterSelectScreen);
         BuildPlaceholderAscensionPanel(sourceCharacterSelectScreen);
-        Log.Info("[AITeammate] AI teammate setup screen created from fallback layout with the stock back button.");
+        Log.Info("[AITeammate] AI teammate setup screen created from fallback layout with a custom back button.");
+    }
+
+    private void AddCustomBackButton()
+    {
+        if (GetNodeOrNull<Button>("AiTeammateBackButton") != null)
+        {
+            return;
+        }
+
+        Button backButton = AiTeammateMenuUiFactory.CreateSimpleBackButton();
+        backButton.Pressed += () => _stack?.Pop();
+        AddChild(backButton);
     }
 
     private Control BuildPlaceholderSlotsUi()
@@ -384,24 +418,47 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu, IStartRunLobbyLi
     {
         Log.Info($"[AITeammate] Placeholder slot clicked: {slotIndex}.");
 
-        if (_sourceSingleplayerSubmenu == null || _stack == null)
+        if (_stack == null)
         {
             Log.Warn("[AITeammate] Could not open the AI slot picker because the stock submenu template or submenu stack was unavailable.");
             return;
         }
 
-        var pickerScreen = _pickerScreen;
-        if (pickerScreen == null || !GodotObject.IsInstanceValid(pickerScreen))
+        try
         {
-            pickerScreen = AiTeammateSlotCharacterPickerScreen.CreateFromTemplate(_sourceSingleplayerSubmenu, PickerScreenNodeName);
+            Log.Info("[AITeammate] Picker open step: clearing cached picker.");
+            ClearCachedPickerScreen();
+            Log.Info("[AITeammate] Picker open step: creating picker screen.");
+            AiTeammateSlotCharacterPickerScreen pickerScreen =
+                AiTeammateSlotCharacterPickerScreen.CreateFromSetupScreen(this, PickerScreenNodeName);
+            Log.Info("[AITeammate] Picker open step: created picker screen instance.");
             _pickerScreen = pickerScreen;
             ((CanvasItem)pickerScreen).Visible = false;
+            Log.Info("[AITeammate] Picker open step: adding picker to submenu stack.");
             ((Node)(object)_stack).AddChild(pickerScreen);
+            Log.Info("[AITeammate] Created fresh AI slot picker screen for the current submenu stack.");
+
+            _slotSelections.TryGetValue(slotIndex, out var selectedCharacterId);
+            Log.Info($"[AITeammate] Picker open step: begin selection for slot {slotIndex}.");
+            pickerScreen.BeginSelection(this, slotIndex, selectedCharacterId);
+            Log.Info("[AITeammate] Picker open step: pushing picker screen.");
+            _stack.Push(pickerScreen);
+            Log.Info("[AITeammate] Picker open step: push completed.");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[AITeammate] Failed to open AI slot picker for slot {slotIndex}: {ex}");
+        }
+    }
+
+    private void ClearCachedPickerScreen()
+    {
+        if (_pickerScreen != null && GodotObject.IsInstanceValid(_pickerScreen))
+        {
+            ((Node)_pickerScreen).QueueFree();
         }
 
-        _slotSelections.TryGetValue(slotIndex, out var selectedCharacterId);
-        pickerScreen.BeginSelection(this, slotIndex, selectedCharacterId);
-        _stack.Push(pickerScreen);
+        _pickerScreen = null;
     }
 
     private void UpdateAiSlotVisual(int slotIndex, AiTeammatePlaceholderCharacter character)

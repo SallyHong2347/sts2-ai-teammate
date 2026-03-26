@@ -152,17 +152,8 @@ public partial class AiTeammateContinueRunScreen : NSubmenu
     private void OnAbandonPressed()
     {
         AiTeammateSaveSupport.AbandonSavedRun();
-
-        NMainMenu? mainMenu = ((Node)_stack).GetParent() as NMainMenu;
-        if (mainMenu == null)
-        {
-            Log.Warn("[AITeammate] Could not find the main menu while abandoning the saved AI teammate run.");
-            _stack.Pop();
-            return;
-        }
-
         _stack.Pop();
-        MainMenuAiTeammatePatch.OpenAiTeammateSetupSubmenu(mainMenu);
+        Log.Info("[AITeammate] Abandoned saved AI teammate run and returned to the main menu.");
     }
 
     private static Button CreateActionButton(string text, Color normalColor, Color hoverColor)

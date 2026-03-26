@@ -34,8 +34,6 @@ internal static class AiTeammatePlaceholderCharacters
         new("necrobinder", "Necrobinder", "res://images/packed/character_select/char_select_necrobinder.png")
     };
 
-    private static readonly Dictionary<string, Texture2D?> LoadedTextures = new(StringComparer.Ordinal);
-
     static AiTeammatePlaceholderCharacters()
     {
         foreach (AiTeammatePlaceholderCharacter character in All)
@@ -51,12 +49,8 @@ internal static class AiTeammatePlaceholderCharacters
 
     public static Texture2D? LoadTexture(string texturePath)
     {
-        if (!LoadedTextures.TryGetValue(texturePath, out var texture))
-        {
-            texture = ResourceLoader.Load<Texture2D>(texturePath);
-            LoadedTextures[texturePath] = texture;
-        }
-
-        return texture;
+        // These UI screens are recreated across submenu teardown/reopen cycles.
+        // Returning a fresh resource here avoids reusing a disposed Godot texture instance.
+        return ResourceLoader.Load<Texture2D>(texturePath);
     }
 }

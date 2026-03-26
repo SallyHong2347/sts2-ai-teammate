@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Platform;
+using MegaCrit.Sts2.Core.Runs;
 
 namespace AITeammate.Scripts;
 
@@ -20,11 +21,16 @@ internal sealed class AiTeammateSessionState
     private const int FirstAiSlotIndex = 1;
     private const int LastAiSlotIndex = 4;
 
-    public AiTeammateSessionState(ulong hostPlayerId, IReadOnlyList<AiTeammateSessionParticipant> participants, IReadOnlyDictionary<ulong, AiTeammateDummyController> aiControllers)
+    public AiTeammateSessionState(
+        ulong hostPlayerId,
+        IReadOnlyList<AiTeammateSessionParticipant> participants,
+        IReadOnlyDictionary<ulong, AiTeammateDummyController> aiControllers,
+        bool useTestMap)
     {
         HostPlayerId = hostPlayerId;
         Participants = participants;
         AiControllers = aiControllers;
+        UseTestMap = useTestMap;
     }
 
     public ulong HostPlayerId { get; }
@@ -33,11 +39,13 @@ internal sealed class AiTeammateSessionState
 
     public IReadOnlyDictionary<ulong, AiTeammateDummyController> AiControllers { get; }
 
+    public bool UseTestMap { get; }
+
     public bool HasHost => Participants.Any((participant) => participant.IsHost);
 
     public int AiCount => Participants.Count((participant) => !participant.IsHost);
 
-    public static AiTeammateSessionState? CreateFromSelections(IReadOnlyDictionary<int, string?> selections)
+    public static AiTeammateSessionState? CreateFromSelections(IReadOnlyDictionary<int, string?> selections, bool useTestMap)
     {
         TryResolveHostPlayerId(out ulong hostPlayerId);
 
@@ -79,7 +87,7 @@ internal sealed class AiTeammateSessionState
             aiControllers[playerId] = new AiTeammateDummyController(slotIndex, playerId, character);
         }
 
-        return new AiTeammateSessionState(hostPlayerId, participants, aiControllers);
+        return new AiTeammateSessionState(hostPlayerId, participants, aiControllers, useTestMap);
     }
 
     private static bool TryResolveHostPlayerId(out ulong hostPlayerId)
@@ -117,5 +125,12 @@ internal static class AiTeammateSessionRegistry
 
         displayName = string.Empty;
         return false;
+    }
+
+    public static bool ShouldUseTestMap(RunState? runState)
+    {
+        return Current?.UseTestMap == true &&
+               runState != null &&
+               runState.CurrentActIndex == 0;
     }
 }
