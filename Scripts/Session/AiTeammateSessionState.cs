@@ -16,6 +16,9 @@ internal readonly record struct AiTeammateSessionParticipant(
 internal sealed class AiTeammateSessionState
 {
     private const ulong AiNetIdOffset = 10_000UL;
+    private const int HostSlotIndex = 0;
+    private const int FirstAiSlotIndex = 1;
+    private const int LastAiSlotIndex = 4;
 
     public AiTeammateSessionState(ulong hostPlayerId, IReadOnlyList<AiTeammateSessionParticipant> participants, IReadOnlyDictionary<ulong, AiTeammateDummyController> aiControllers)
     {
@@ -36,12 +39,9 @@ internal sealed class AiTeammateSessionState
 
     public static AiTeammateSessionState? CreateFromSelections(IReadOnlyDictionary<int, string?> selections)
     {
-        if (!TryResolveHostPlayerId(out ulong hostPlayerId))
-        {
-            hostPlayerId = 1UL;
-        }
+        TryResolveHostPlayerId(out ulong hostPlayerId);
 
-        if (!selections.TryGetValue(0, out string? hostCharacterId) ||
+        if (!selections.TryGetValue(HostSlotIndex, out string? hostCharacterId) ||
             string.IsNullOrWhiteSpace(hostCharacterId) ||
             !AiTeammatePlaceholderCharacters.TryGetById(hostCharacterId, out AiTeammatePlaceholderCharacter hostCharacterOption))
         {
@@ -51,7 +51,7 @@ internal sealed class AiTeammateSessionState
         List<AiTeammateSessionParticipant> participants =
         [
             new AiTeammateSessionParticipant(
-                SlotIndex: 0,
+                SlotIndex: HostSlotIndex,
                 PlayerId: hostPlayerId,
                 Character: hostCharacterOption.ResolveModel(),
                 IsHost: true,
@@ -59,7 +59,7 @@ internal sealed class AiTeammateSessionState
         ];
 
         Dictionary<ulong, AiTeammateDummyController> aiControllers = new();
-        for (int slotIndex = 1; slotIndex < 5; slotIndex++)
+        for (int slotIndex = FirstAiSlotIndex; slotIndex <= LastAiSlotIndex; slotIndex++)
         {
             if (!selections.TryGetValue(slotIndex, out string? aiCharacterId) ||
                 string.IsNullOrWhiteSpace(aiCharacterId) ||
@@ -106,16 +106,12 @@ internal static class AiTeammateSessionRegistry
 
     public static bool TryGetDisplayName(ulong playerId, out string displayName)
     {
-        AiTeammateSessionState? session = Current;
-        if (session != null)
+        foreach (AiTeammateSessionParticipant participant in Current?.Participants ?? Array.Empty<AiTeammateSessionParticipant>())
         {
-            foreach (AiTeammateSessionParticipant participant in session.Participants)
+            if (participant.PlayerId == playerId)
             {
-                if (participant.PlayerId == playerId)
-                {
-                    displayName = participant.DisplayName;
-                    return true;
-                }
+                displayName = participant.DisplayName;
+                return true;
             }
         }
 

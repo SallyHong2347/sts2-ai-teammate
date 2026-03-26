@@ -77,7 +77,7 @@ public partial class AiTeammateCharacterSetupScreen
             Node? sourceRemoteContainer = ((Node)sourceCharacterSelectScreen).GetNodeOrNull<Node>(RemotePlayerContainerNodeName);
             if (sourceRemoteContainer != null)
             {
-                Node duplicate = sourceRemoteContainer.Duplicate(DuplicateNodeFlags);
+                Node duplicate = sourceRemoteContainer.Duplicate(AiTeammateMenuUiFactory.DuplicateNodeFlags);
                 if (duplicate is NRemoteLobbyPlayerContainer remoteLobbyPlayerContainer)
                 {
                     ((Node)remoteLobbyPlayerContainer).Name = "AiTeammateRemotePlayerContainer";

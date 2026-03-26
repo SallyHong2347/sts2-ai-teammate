@@ -24,6 +24,7 @@ internal readonly record struct AiTeammatePlaceholderCharacter(string Id, string
 
 internal static class AiTeammatePlaceholderCharacters
 {
+    private static readonly Dictionary<string, AiTeammatePlaceholderCharacter> CharactersById = new(StringComparer.Ordinal);
     public static readonly AiTeammatePlaceholderCharacter[] All =
     {
         new("ironclad", "Ironclad", "res://images/packed/character_select/char_select_ironclad.png"),
@@ -35,19 +36,17 @@ internal static class AiTeammatePlaceholderCharacters
 
     private static readonly Dictionary<string, Texture2D?> LoadedTextures = new(StringComparer.Ordinal);
 
+    static AiTeammatePlaceholderCharacters()
+    {
+        foreach (AiTeammatePlaceholderCharacter character in All)
+        {
+            CharactersById[character.Id] = character;
+        }
+    }
+
     public static bool TryGetById(string id, out AiTeammatePlaceholderCharacter character)
     {
-        foreach (var option in All)
-        {
-            if (string.Equals(option.Id, id, StringComparison.Ordinal))
-            {
-                character = option;
-                return true;
-            }
-        }
-
-        character = default;
-        return false;
+        return CharactersById.TryGetValue(id, out character);
     }
 
     public static Texture2D? LoadTexture(string texturePath)

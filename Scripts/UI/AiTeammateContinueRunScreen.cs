@@ -9,7 +9,6 @@ namespace AITeammate.Scripts;
 
 public partial class AiTeammateContinueRunScreen : NSubmenu
 {
-    private const int DuplicateNodeFlags = 14;
     private const string DefaultDescription = "Continue your saved AI teammate run, or abandon it and return to setup.";
     private const string MissingSaveDescription = "No valid AI teammate save was found. Press Back to return, or reopen the mode to start a new setup flow.";
     private static readonly Color PageBackgroundColor = new(0.16f, 0.24f, 0.31f, 0.95f);
@@ -46,27 +45,8 @@ public partial class AiTeammateContinueRunScreen : NSubmenu
 
     private void BuildLayout(NSingleplayerSubmenu sourceSingleplayerSubmenu)
     {
-        LayoutMode = sourceSingleplayerSubmenu.LayoutMode;
-        AnchorLeft = sourceSingleplayerSubmenu.AnchorLeft;
-        AnchorTop = sourceSingleplayerSubmenu.AnchorTop;
-        AnchorRight = sourceSingleplayerSubmenu.AnchorRight;
-        AnchorBottom = sourceSingleplayerSubmenu.AnchorBottom;
-        OffsetLeft = sourceSingleplayerSubmenu.OffsetLeft;
-        OffsetTop = sourceSingleplayerSubmenu.OffsetTop;
-        OffsetRight = sourceSingleplayerSubmenu.OffsetRight;
-        OffsetBottom = sourceSingleplayerSubmenu.OffsetBottom;
-        GrowHorizontal = sourceSingleplayerSubmenu.GrowHorizontal;
-        GrowVertical = sourceSingleplayerSubmenu.GrowVertical;
-        Theme = sourceSingleplayerSubmenu.Theme;
-        ThemeTypeVariation = sourceSingleplayerSubmenu.ThemeTypeVariation;
-        MouseFilter = MouseFilterEnum.Stop;
-
-        Node? sourceBackButton = ((Node)sourceSingleplayerSubmenu).GetNodeOrNull<Node>("BackButton");
-        if (sourceBackButton != null)
-        {
-            Node duplicate = sourceBackButton.Duplicate(DuplicateNodeFlags);
-            AddChild(duplicate);
-        }
+        AiTeammateMenuUiFactory.CopySubmenuLayoutFrom(this, sourceSingleplayerSubmenu);
+        AiTeammateMenuUiFactory.TryDuplicateStockBackButton(this, sourceSingleplayerSubmenu, "creating the AI teammate continue page");
 
         Panel panel = new()
         {
@@ -204,18 +184,6 @@ public partial class AiTeammateContinueRunScreen : NSubmenu
 
     private static StyleBoxFlat CreatePanelStyle(Color background, Color border)
     {
-        return new StyleBoxFlat
-        {
-            BgColor = background,
-            BorderColor = border,
-            BorderWidthBottom = 2,
-            BorderWidthTop = 2,
-            BorderWidthLeft = 2,
-            BorderWidthRight = 2,
-            CornerRadiusBottomLeft = 18,
-            CornerRadiusBottomRight = 18,
-            CornerRadiusTopLeft = 18,
-            CornerRadiusTopRight = 18
-        };
+        return AiTeammateMenuUiFactory.CreateRoundedPanelStyle(background, border, 2, 18, contentMargin: 0f);
     }
 }

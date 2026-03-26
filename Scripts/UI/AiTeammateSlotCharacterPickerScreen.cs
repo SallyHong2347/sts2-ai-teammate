@@ -8,10 +8,7 @@ namespace AITeammate.Scripts;
 
 public partial class AiTeammateSlotCharacterPickerScreen : NSubmenu
 {
-    private const int DuplicateNodeFlags = 14;
-    private const string BackButtonNodeName = "BackButton";
     private const string ContentPanelNodeName = "AiTeammateCharacterPickerPanel";
-    private static readonly Vector2 BackButtonPivotOffset = new(20f, 40f);
     private static readonly Color PageBackgroundColor = new(0.17f, 0.24f, 0.32f, 0.96f);
     private static readonly Color PageBorderColor = new(0.62f, 0.73f, 0.81f, 0.95f);
     private static readonly Color PortraitCardColor = new(0.10f, 0.16f, 0.24f, 1f);
@@ -84,54 +81,12 @@ public partial class AiTeammateSlotCharacterPickerScreen : NSubmenu
 
     private void CopyRootLayoutFrom(NSingleplayerSubmenu sourceSingleplayerSubmenu)
     {
-        LayoutMode = sourceSingleplayerSubmenu.LayoutMode;
-        AnchorLeft = sourceSingleplayerSubmenu.AnchorLeft;
-        AnchorTop = sourceSingleplayerSubmenu.AnchorTop;
-        AnchorRight = sourceSingleplayerSubmenu.AnchorRight;
-        AnchorBottom = sourceSingleplayerSubmenu.AnchorBottom;
-        OffsetLeft = sourceSingleplayerSubmenu.OffsetLeft;
-        OffsetTop = sourceSingleplayerSubmenu.OffsetTop;
-        OffsetRight = sourceSingleplayerSubmenu.OffsetRight;
-        OffsetBottom = sourceSingleplayerSubmenu.OffsetBottom;
-        GrowHorizontal = sourceSingleplayerSubmenu.GrowHorizontal;
-        GrowVertical = sourceSingleplayerSubmenu.GrowVertical;
-        Scale = sourceSingleplayerSubmenu.Scale;
-        Rotation = sourceSingleplayerSubmenu.Rotation;
-        PivotOffset = sourceSingleplayerSubmenu.PivotOffset;
-        LayoutDirection = sourceSingleplayerSubmenu.LayoutDirection;
-        SizeFlagsHorizontal = sourceSingleplayerSubmenu.SizeFlagsHorizontal;
-        SizeFlagsVertical = sourceSingleplayerSubmenu.SizeFlagsVertical;
-        Theme = sourceSingleplayerSubmenu.Theme;
-        ThemeTypeVariation = sourceSingleplayerSubmenu.ThemeTypeVariation;
-        MouseFilter = MouseFilterEnum.Stop;
+        AiTeammateMenuUiFactory.CopySubmenuLayoutFrom(this, sourceSingleplayerSubmenu);
     }
 
     private void DuplicateBackButtonFrom(NSingleplayerSubmenu sourceSingleplayerSubmenu)
     {
-        var sourceBackButton = ((Node)sourceSingleplayerSubmenu).GetNodeOrNull<Node>(BackButtonNodeName);
-        if (sourceBackButton == null)
-        {
-            Log.Warn("[AITeammate] Could not find BackButton on NSingleplayerSubmenu while creating the AI slot picker screen.");
-            return;
-        }
-
-        var duplicate = sourceBackButton.Duplicate(DuplicateNodeFlags);
-        if (duplicate is Control duplicateControl)
-        {
-            duplicateControl.AnchorLeft = 0f;
-            duplicateControl.AnchorTop = 1f;
-            duplicateControl.AnchorRight = 0f;
-            duplicateControl.AnchorBottom = 1f;
-            duplicateControl.OffsetLeft = -40f;
-            duplicateControl.OffsetTop = -354f;
-            duplicateControl.OffsetRight = 160f;
-            duplicateControl.OffsetBottom = -244f;
-            duplicateControl.GrowVertical = GrowDirection.Begin;
-            duplicateControl.PivotOffset = BackButtonPivotOffset;
-            duplicateControl.Scale = Vector2.One;
-        }
-
-        AddChild(duplicate);
+        AiTeammateMenuUiFactory.TryDuplicateStockBackButton(this, sourceSingleplayerSubmenu, "creating the AI slot picker screen");
     }
 
     private void BuildContentPanel()
@@ -403,20 +358,6 @@ public partial class AiTeammateSlotCharacterPickerScreen : NSubmenu
 
     private static StyleBoxFlat CreatePanelStyle(Color backgroundColor, Color borderColor, int borderWidth, int cornerRadius)
     {
-        var style = new StyleBoxFlat
-        {
-            BgColor = backgroundColor,
-            BorderColor = borderColor,
-            CornerRadiusTopLeft = cornerRadius,
-            CornerRadiusTopRight = cornerRadius,
-            CornerRadiusBottomRight = cornerRadius,
-            CornerRadiusBottomLeft = cornerRadius
-        };
-        style.SetBorderWidthAll(borderWidth);
-        style.ContentMarginLeft = 12f;
-        style.ContentMarginTop = 12f;
-        style.ContentMarginRight = 12f;
-        style.ContentMarginBottom = 12f;
-        return style;
+        return AiTeammateMenuUiFactory.CreateRoundedPanelStyle(backgroundColor, borderColor, borderWidth, cornerRadius, contentMargin: 12f);
     }
 }

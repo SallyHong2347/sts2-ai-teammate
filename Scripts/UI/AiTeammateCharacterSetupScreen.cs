@@ -16,9 +16,7 @@ namespace AITeammate.Scripts;
 
 public partial class AiTeammateCharacterSetupScreen : NSubmenu, IStartRunLobbyListener
 {
-    private const int DuplicateNodeFlags = 14;
     private const int MaxPlayerCount = 5;
-    private const string BackButtonNodeName = "BackButton";
     private const string ContentPanelNodeName = "AiTeammateContentPanel";
     private const string PickerScreenNodeName = "AiTeammateSlotCharacterPickerScreen";
     private const string AscensionPanelNodeName = "AscensionPanel";
@@ -29,7 +27,6 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu, IStartRunLobbyLi
     private const string SessionHintNodeName = "AiTeammateSessionHint";
     private const string ProceedButtonNodeName = "AiTeammateProceedButton";
     private const float ContentPanelVerticalShift = 170f;
-    private static readonly Vector2 BackButtonPivotOffset = new(20f, 40f);
     private static readonly Vector2 AscensionPanelPosition = new(-317f, -341f);
     private static readonly Vector2 AscensionPanelSize = new(634f, 117f);
     private static readonly Color PageBackgroundColor = new(0.21f, 0.31f, 0.39f, 0.92f);
@@ -109,41 +106,12 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu, IStartRunLobbyLi
         _sourceCharacterSelectScreen = sourceCharacterSelectScreen;
         _selectedAscensionLevel = SaveManager.Instance.Progress.PreferredMultiplayerAscension;
 
-        LayoutMode = sourceSingleplayerSubmenu.LayoutMode;
-        AnchorLeft = sourceSingleplayerSubmenu.AnchorLeft;
-        AnchorTop = sourceSingleplayerSubmenu.AnchorTop;
-        AnchorRight = sourceSingleplayerSubmenu.AnchorRight;
-        AnchorBottom = sourceSingleplayerSubmenu.AnchorBottom;
-        OffsetLeft = sourceSingleplayerSubmenu.OffsetLeft;
-        OffsetTop = sourceSingleplayerSubmenu.OffsetTop;
-        OffsetRight = sourceSingleplayerSubmenu.OffsetRight;
-        OffsetBottom = sourceSingleplayerSubmenu.OffsetBottom;
-        GrowHorizontal = sourceSingleplayerSubmenu.GrowHorizontal;
-        GrowVertical = sourceSingleplayerSubmenu.GrowVertical;
-        Scale = sourceSingleplayerSubmenu.Scale;
-        Rotation = sourceSingleplayerSubmenu.Rotation;
-        PivotOffset = sourceSingleplayerSubmenu.PivotOffset;
-        LayoutDirection = sourceSingleplayerSubmenu.LayoutDirection;
-        SizeFlagsHorizontal = sourceSingleplayerSubmenu.SizeFlagsHorizontal;
-        SizeFlagsVertical = sourceSingleplayerSubmenu.SizeFlagsVertical;
-        Theme = sourceSingleplayerSubmenu.Theme;
-        ThemeTypeVariation = sourceSingleplayerSubmenu.ThemeTypeVariation;
-        MouseFilter = MouseFilterEnum.Stop;
+        AiTeammateMenuUiFactory.CopySubmenuLayoutFrom(this, sourceSingleplayerSubmenu);
 
-        var sourceBackButton = ((Node)sourceSingleplayerSubmenu).GetNodeOrNull<Node>(BackButtonNodeName);
-        if (sourceBackButton == null)
+        if (!AiTeammateMenuUiFactory.TryDuplicateStockBackButton(this, sourceSingleplayerSubmenu, "creating the fallback AI teammate setup screen"))
         {
-            Log.Warn("[AITeammate] Could not find BackButton on NSingleplayerSubmenu while creating the fallback AI teammate setup screen.");
             return;
         }
-
-        var duplicate = sourceBackButton.Duplicate(DuplicateNodeFlags);
-        if (duplicate is Control duplicateControl)
-        {
-            ResetBackButtonGeometry(duplicateControl);
-        }
-
-        AddChild(duplicate);
         Control contentPanel = BuildPlaceholderSlotsUi();
         BuildSessionUi(contentPanel, sourceCharacterSelectScreen);
         BuildPlaceholderAscensionPanel(sourceCharacterSelectScreen);
@@ -370,7 +338,7 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu, IStartRunLobbyLi
             return;
         }
 
-        var duplicate = sourceAscensionPanel.Duplicate(DuplicateNodeFlags);
+        var duplicate = sourceAscensionPanel.Duplicate(AiTeammateMenuUiFactory.DuplicateNodeFlags);
         if (duplicate is Control duplicateControl)
         {
             ResetAscensionPanelGeometry(duplicateControl);
@@ -525,22 +493,6 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu, IStartRunLobbyLi
         removeButton.Visible = hasSelection && hovered;
     }
 
-    private static void ResetBackButtonGeometry(Control control)
-    {
-        // Reset to the authored stock scene geometry instead of inheriting the hidden source button's runtime state.
-        control.AnchorLeft = 0f;
-        control.AnchorTop = 1f;
-        control.AnchorRight = 0f;
-        control.AnchorBottom = 1f;
-        control.OffsetLeft = -40f;
-        control.OffsetTop = -354f;
-        control.OffsetRight = 160f;
-        control.OffsetBottom = -244f;
-        control.GrowVertical = GrowDirection.Begin;
-        control.PivotOffset = BackButtonPivotOffset;
-        control.Scale = Vector2.One;
-    }
-
     private static void ResetAscensionPanelGeometry(Control control)
     {
         // Reset to the authored character-select scene geometry instead of inheriting live runtime layout state.
@@ -606,20 +558,6 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu, IStartRunLobbyLi
 
     private static StyleBoxFlat CreatePanelStyle(Color backgroundColor, Color borderColor, int borderWidth, int cornerRadius)
     {
-        var style = new StyleBoxFlat
-        {
-            BgColor = backgroundColor,
-            BorderColor = borderColor,
-            CornerRadiusTopLeft = cornerRadius,
-            CornerRadiusTopRight = cornerRadius,
-            CornerRadiusBottomRight = cornerRadius,
-            CornerRadiusBottomLeft = cornerRadius
-        };
-        style.SetBorderWidthAll(borderWidth);
-        style.ContentMarginLeft = 20f;
-        style.ContentMarginTop = 20f;
-        style.ContentMarginRight = 20f;
-        style.ContentMarginBottom = 20f;
-        return style;
+        return AiTeammateMenuUiFactory.CreateRoundedPanelStyle(backgroundColor, borderColor, borderWidth, cornerRadius);
     }
 }
