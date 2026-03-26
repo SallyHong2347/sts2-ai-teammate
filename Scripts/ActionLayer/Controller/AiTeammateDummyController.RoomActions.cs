@@ -1,0 +1,113 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.Threading.Tasks;
+using HarmonyLib;
+using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Entities.RestSite;
+using MegaCrit.Sts2.Core.Events;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Multiplayer.Game;
+using MegaCrit.Sts2.Core.Runs;
+
+namespace AITeammate.Scripts;
+
+internal sealed partial class AiTeammateDummyController
+{
+    private static readonly MethodInfo? EventChooseOptionForEventMethod =
+        AccessTools.Method(typeof(EventSynchronizer), "ChooseOptionForEvent");
+    private static readonly MethodInfo? EventVoteForSharedOptionMethod =
+        AccessTools.Method(typeof(EventSynchronizer), "PlayerVotedForSharedOptionIndex");
+    private static readonly MethodInfo? RestSiteChooseOptionMethod =
+        AccessTools.Method(typeof(RestSiteSynchronizer), "ChooseOption");
+    private static readonly FieldInfo? EventPageIndexField =
+        AccessTools.Field(typeof(EventSynchronizer), "_pageIndex");
+
+    private IReadOnlyList<AiTeammateAvailableAction> DiscoverEventActions(Player player)
+    {
+        EventSynchronizer synchronizer = RunManager.Instance.EventSynchronizer;
+        if (synchronizer.IsShared && synchronizer.GetPlayerVote(player).HasValue)
+        {
+            return [];
+        }
+
+        EventModel eventForPlayer = synchronizer.GetEventForPlayer(player);
+        IReadOnlyList<EventOption> options = eventForPlayer.CurrentOptions;
+        string eventFingerprint = BuildEventActionFingerprint(synchronizer, eventForPlayer);
+
+        for (int optionIndex = 0; optionIndex < options.Count; optionIndex++)
+        {
+            EventOption option = options[optionIndex];
+            if (option.IsLocked)
+            {
+                continue;
+            }
+
+            return
+            [
+                new AiTeammateAvailableAction(
+                    AiTeammateActionKind.ChooseEventOption,
+                    $"Choose event option {option.TextKey}",
+                    async () => await ChooseEventOptionAsync(synchronizer, player, optionIndex),
+                    $"{PlayerId}:event:{eventFingerprint}:{optionIndex}")
+            ];
+        }
+
+        return [];
+    }
+
+    private IReadOnlyList<AiTeammateAvailableAction> DiscoverRestSiteActions(Player player)
+    {
+        RestSiteSynchronizer synchronizer = RunManager.Instance.RestSiteSynchronizer;
+        IReadOnlyList<RestSiteOption> options = synchronizer.GetOptionsForPlayer(player);
+        RestSiteOption? preferredOption = options.FirstOrDefault(static option => option.OptionId == "HEAL") ?? options.FirstOrDefault();
+        if (preferredOption == null)
+        {
+            return [];
+        }
+
+        int optionIndex = options.ToList().IndexOf(preferredOption);
+        return
+        [
+            new AiTeammateAvailableAction(
+                AiTeammateActionKind.ChooseRestSiteOption,
+                $"Choose rest site option {preferredOption.OptionId}",
+                async () => await ChooseRestSiteOptionAsync(synchronizer, player, optionIndex))
+        ];
+    }
+
+    private static string BuildEventActionFingerprint(EventSynchronizer synchronizer, EventModel eventForPlayer)
+    {
+        uint pageIndex = EventPageIndexField?.GetValue(synchronizer) is uint currentPageIndex
+            ? currentPageIndex
+            : 0u;
+        string optionFingerprint = string.Join(
+            ",",
+            eventForPlayer.CurrentOptions.Select(static option => $"{option.TextKey}:{option.IsLocked}:{option.IsProceed}"));
+        return $"{eventForPlayer.Id}|finished={eventForPlayer.IsFinished}|page={pageIndex}|options={optionFingerprint}";
+    }
+
+    private static async Task ChooseEventOptionAsync(EventSynchronizer synchronizer, Player player, int optionIndex)
+    {
+        if (synchronizer.IsShared)
+        {
+            uint pageIndex = EventPageIndexField?.GetValue(synchronizer) is uint currentPageIndex
+                ? currentPageIndex
+                : 0u;
+            EventVoteForSharedOptionMethod?.Invoke(synchronizer, new object[] { player, (uint)optionIndex, pageIndex });
+            await Task.CompletedTask;
+            return;
+        }
+
+        EventChooseOptionForEventMethod?.Invoke(synchronizer, new object[] { player, optionIndex });
+        await Task.CompletedTask;
+    }
+
+    private static async Task ChooseRestSiteOptionAsync(RestSiteSynchronizer synchronizer, Player player, int optionIndex)
+    {
+        if (RestSiteChooseOptionMethod?.Invoke(synchronizer, new object[] { player, optionIndex }) is Task<bool> task)
+        {
+            await task;
+        }
+    }
+}
