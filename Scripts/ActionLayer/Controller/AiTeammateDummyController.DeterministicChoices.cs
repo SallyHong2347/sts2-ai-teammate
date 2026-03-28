@@ -1,37 +1,83 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Entities.CardRewardAlternatives;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Rewards;
+using MegaCrit.Sts2.Core.Runs;
+using MegaCrit.Sts2.Core.Runs.History;
+using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.TestSupport;
 
 namespace AITeammate.Scripts;
 
 internal sealed partial class AiTeammateDummyController
 {
+    private static readonly FieldInfo? CardRewardCardsField =
+        typeof(CardReward).GetField("_cards", BindingFlags.Instance | BindingFlags.NonPublic);
+
     public static async Task ExecuteDeterministicRewardSetAsync(RewardsSet rewardsSet)
     {
-        await rewardsSet.GenerateWithoutOffering();
         using IDisposable selectorScope = PushDeterministicCardSelector();
+        Log.Info($"[AITeammate] Deterministic reward set start player={rewardsSet.Player.NetId} room={rewardsSet.Room?.GetType().Name ?? "Custom"} roomCount={rewardsSet.Player.RunState.CurrentRoomCount} currentRoom={rewardsSet.Player.RunState.CurrentRoom?.GetType().Name ?? "null"}");
+        await rewardsSet.GenerateWithoutOffering();
         foreach (Reward reward in rewardsSet.Rewards.ToList())
         {
+            Log.Info($"[AITeammate] Deterministic reward executing player={rewardsSet.Player.NetId} reward={reward.GetType().Name} roomCount={rewardsSet.Player.RunState.CurrentRoomCount} currentRoom={rewardsSet.Player.RunState.CurrentRoom?.GetType().Name ?? "null"}");
             await ExecuteRewardAsync(reward);
         }
+        Log.Info($"[AITeammate] Deterministic reward set complete player={rewardsSet.Player.NetId} room={rewardsSet.Room?.GetType().Name ?? "Custom"} roomCount={rewardsSet.Player.RunState.CurrentRoomCount} currentRoom={rewardsSet.Player.RunState.CurrentRoom?.GetType().Name ?? "null"}");
+    }
+
+    public static async Task<bool> ExecuteDeterministicCardRewardAsync(CardReward reward)
+    {
+        List<CardCreationResult> cards = GetCardRewardCards(reward);
+        ulong historyNetId = LocalContext.NetId ?? reward.Player.NetId;
+        var historyEntry = reward.Player.RunState.CurrentMapPointHistoryEntry;
+        if (historyEntry == null)
+        {
+            return false;
+        }
+
+        CardModel? selected = cards.FirstOrDefault()?.Card;
+        if (selected != null)
+        {
+            CardPileAddResult addResult = await CardPileCmd.Add(selected, PileType.Deck);
+            if (addResult.success)
+            {
+                CardModel addedCard = addResult.cardAdded;
+                historyEntry
+                    .GetEntry(historyNetId)
+                    .CardChoices.Add(new CardChoiceHistoryEntry(addedCard, wasPicked: true));
+                RunManager.Instance.RewardSynchronizer.SyncLocalObtainedCard(addedCard);
+                cards.RemoveAll(card => card.Card == selected);
+                Log.Info($"[AITeammate] Deterministic card reward picked player={reward.Player.NetId} card={addedCard.Id.Entry}");
+            }
+        }
+
+        foreach (CardCreationResult card in cards)
+        {
+            historyEntry
+                .GetEntry(historyNetId)
+                .CardChoices.Add(new CardChoiceHistoryEntry(card.Card, wasPicked: false));
+            RunManager.Instance.RewardSynchronizer.SyncLocalSkippedCard(card.Card);
+        }
+
+        return false;
     }
 
     public static async Task<CardModel?> ChooseFirstCardFromChooseScreenAsync(
         PlayerChoiceContext context,
         IReadOnlyList<CardModel> cards)
     {
-        await context.SignalPlayerChoiceBegun(PlayerChoiceOptions.None);
         CardModel? chosen = cards.FirstOrDefault();
-        await context.SignalPlayerChoiceEnded();
         return chosen;
     }
 
@@ -42,19 +88,9 @@ internal sealed partial class AiTeammateDummyController
         int maxSelect,
         PlayerChoiceOptions choiceOptions = PlayerChoiceOptions.None)
     {
-        if (context != null)
-        {
-            await context.SignalPlayerChoiceBegun(choiceOptions);
-        }
-
         List<CardModel> list = options.ToList();
         int desiredCount = ComputeSelectionCount(list.Count, minSelect, maxSelect);
         IEnumerable<CardModel> selected = list.Take(desiredCount).ToList();
-
-        if (context != null)
-        {
-            await context.SignalPlayerChoiceEnded();
-        }
 
         return selected;
     }
@@ -94,6 +130,9 @@ internal sealed partial class AiTeammateDummyController
     {
         switch (reward)
         {
+            case CardReward cardReward:
+                await ExecuteDeterministicCardRewardAsync(cardReward);
+                return;
             case PotionReward potionReward:
                 if (await potionReward.OnSelectWrapper())
                 {
@@ -112,6 +151,11 @@ internal sealed partial class AiTeammateDummyController
                 await reward.OnSelectWrapper();
                 return;
         }
+    }
+
+    private static List<CardCreationResult> GetCardRewardCards(CardReward reward)
+    {
+        return CardRewardCardsField?.GetValue(reward) as List<CardCreationResult> ?? [];
     }
 
     private sealed class DeterministicCardSelector : ICardSelector

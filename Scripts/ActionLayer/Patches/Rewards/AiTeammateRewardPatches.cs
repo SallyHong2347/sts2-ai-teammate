@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Rewards;
 using MegaCrit.Sts2.Core.Rooms;
 
@@ -35,27 +36,58 @@ internal static class AiTeammateRewardPatches
 
         private static async Task OfferForAiTeammatesAfterHostAsync(Task originalTask, Player player, AbstractRoom room)
         {
-            await originalTask;
-
             AiTeammateSessionState? session = AiTeammateSessionRegistry.Current;
             if (session == null || player.NetId != session.HostPlayerId)
             {
+                await originalTask;
                 return;
             }
 
             if (room is TreasureRoom)
             {
+                await originalTask;
                 return;
             }
 
-            foreach (AiTeammateSessionParticipant participant in session.Participants.Where(static participant => !participant.IsHost))
+            Task[] aiRewardTasks = session.Participants
+                .Where(static participant => !participant.IsHost)
+                .Select(participant => OfferRoomEndRewardsForAiParticipantAsync(player, room, participant))
+                .ToArray();
+
+            Log.Info($"[AITeammate] Starting room-end AI reward fanout room={room.GetType().Name} roomCount={player.RunState.CurrentRoomCount} aiCount={aiRewardTasks.Length}");
+            await Task.WhenAll(aiRewardTasks.Prepend(originalTask));
+            Log.Info($"[AITeammate] Finished room-end AI reward fanout room={room.GetType().Name} roomCount={player.RunState.CurrentRoomCount} currentRoom={player.RunState.CurrentRoom?.GetType().Name ?? "null"}");
+        }
+
+        private static async Task OfferRoomEndRewardsForAiParticipantAsync(
+            Player hostPlayer,
+            AbstractRoom room,
+            AiTeammateSessionParticipant participant)
+        {
+            Player? aiPlayer = hostPlayer.RunState.GetPlayer(participant.PlayerId);
+            if (aiPlayer == null)
             {
-                Player? aiPlayer = player.RunState.GetPlayer(participant.PlayerId);
-                if (aiPlayer != null)
-                {
-                    await RewardsCmd.OfferForRoomEnd(aiPlayer, room);
-                }
+                return;
             }
+
+            Log.Info($"[AITeammate] Offering room-end rewards to AI player={aiPlayer.NetId} room={room.GetType().Name} roomCount={hostPlayer.RunState.CurrentRoomCount} currentRoom={hostPlayer.RunState.CurrentRoom?.GetType().Name ?? "null"}");
+            await RewardsCmd.OfferForRoomEnd(aiPlayer, room);
+            Log.Info($"[AITeammate] Finished room-end rewards for AI player={aiPlayer.NetId} room={room.GetType().Name} roomCount={hostPlayer.RunState.CurrentRoomCount} currentRoom={hostPlayer.RunState.CurrentRoom?.GetType().Name ?? "null"}");
+        }
+    }
+
+    [HarmonyPatch(typeof(CardReward), "OnSelect")]
+    private static class CardRewardOnSelectPatch
+    {
+        private static bool Prefix(CardReward __instance, ref Task<bool> __result)
+        {
+            if (!AiTeammateDummyController.IsAiPlayer(__instance.Player))
+            {
+                return true;
+            }
+
+            __result = AiTeammateDummyController.ExecuteDeterministicCardRewardAsync(__instance);
+            return false;
         }
     }
 }

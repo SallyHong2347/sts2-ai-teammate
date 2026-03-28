@@ -46,9 +46,19 @@ internal sealed partial class AiTeammateDummyController
             return
             [
                 new AiTeammateAvailableAction(
-                    AiTeammateActionKind.ChooseEventOption,
-                    $"Choose event option {option.TextKey}",
-                    async () => await ChooseEventOptionAsync(synchronizer, player, optionIndex),
+                    new AiLegalActionOption
+                    {
+                        ActionId = BuildEventOptionActionId(eventFingerprint, optionIndex),
+                        ActionType = AiTeammateActionKind.ChooseEventOption.ToString(),
+                        Description = $"Choose event option {option.TextKey}",
+                        Label = $"Event option {option.TextKey}",
+                        Summary = $"Choose event option {option.TextKey}."
+                    },
+                    async () =>
+                    {
+                        await ChooseEventOptionAsync(synchronizer, player, optionIndex);
+                        return AiActionExecutionResult.Completed;
+                    },
                     $"{PlayerId}:event:{eventFingerprint}:{optionIndex}")
             ];
         }
@@ -70,9 +80,19 @@ internal sealed partial class AiTeammateDummyController
         return
         [
             new AiTeammateAvailableAction(
-                AiTeammateActionKind.ChooseRestSiteOption,
-                $"Choose rest site option {preferredOption.OptionId}",
-                async () => await ChooseRestSiteOptionAsync(synchronizer, player, optionIndex))
+                new AiLegalActionOption
+                {
+                    ActionId = BuildRestSiteOptionActionId(preferredOption.OptionId, optionIndex),
+                    ActionType = AiTeammateActionKind.ChooseRestSiteOption.ToString(),
+                    Description = $"Choose rest site option {preferredOption.OptionId}",
+                    Label = $"Rest site option {preferredOption.OptionId}",
+                    Summary = $"Choose rest site option {preferredOption.OptionId}."
+                },
+                async () =>
+                {
+                    await ChooseRestSiteOptionAsync(synchronizer, player, optionIndex);
+                    return AiActionExecutionResult.Completed;
+                })
         ];
     }
 
@@ -89,6 +109,8 @@ internal sealed partial class AiTeammateDummyController
 
     private static async Task ChooseEventOptionAsync(EventSynchronizer synchronizer, Player player, int optionIndex)
     {
+        using IDisposable selectorScope = PushDeterministicCardSelector();
+
         if (synchronizer.IsShared)
         {
             uint pageIndex = EventPageIndexField?.GetValue(synchronizer) is uint currentPageIndex
@@ -109,5 +131,15 @@ internal sealed partial class AiTeammateDummyController
         {
             await task;
         }
+    }
+
+    private static string BuildEventOptionActionId(string eventFingerprint, int optionIndex)
+    {
+        return $"event_option_{optionIndex}_{SanitizeActionToken(eventFingerprint)}";
+    }
+
+    private static string BuildRestSiteOptionActionId(string optionId, int optionIndex)
+    {
+        return $"rest_site_option_{optionIndex}_{SanitizeActionToken(optionId)}";
     }
 }

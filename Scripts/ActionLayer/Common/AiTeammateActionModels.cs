@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using MegaCrit.Sts2.Core.GameActions;
 
 namespace AITeammate.Scripts;
 
@@ -17,22 +18,43 @@ internal enum AiTeammateActionKind
 internal sealed class AiTeammateAvailableAction
 {
     public AiTeammateAvailableAction(
-        AiTeammateActionKind kind,
-        string label,
-        Func<Task> executeAsync,
+        AiLegalActionOption option,
+        Func<Task<AiActionExecutionResult>> executeAsync,
         string? deduplicationKey = null)
     {
-        Kind = kind;
-        Label = label;
+        Option = option;
         ExecuteAsync = executeAsync;
         DeduplicationKey = deduplicationKey;
     }
 
-    public AiTeammateActionKind Kind { get; }
+    public AiLegalActionOption Option { get; }
 
-    public string Label { get; }
+    public string ActionId => Option.ActionId;
 
-    public Func<Task> ExecuteAsync { get; }
+    public string ActionType => Option.ActionType;
+
+    public string Description => Option.Description;
+
+    public string? CardId => Option.CardId;
+
+    public string? CardInstanceId => Option.CardInstanceId;
+
+    public string? TargetId => Option.TargetId;
+
+    public int? EnergyCost => Option.EnergyCost;
+
+    public Func<Task<AiActionExecutionResult>> ExecuteAsync { get; }
 
     public string? DeduplicationKey { get; }
+}
+
+internal sealed class AiActionExecutionResult
+{
+    public static AiActionExecutionResult Completed { get; } = new();
+
+    public GameAction? GameAction { get; init; }
+
+    public bool WaitForQueueSettle { get; init; }
+
+    public bool HasTrackedGameAction => GameAction != null;
 }

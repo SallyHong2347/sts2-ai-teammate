@@ -16,7 +16,7 @@ namespace AITeammate.Scripts;
 
 public partial class AiTeammateCharacterSetupScreen : NSubmenu, IStartRunLobbyListener
 {
-    private const int MaxPlayerCount = 5;
+    private const int MaxPlayerCount = 4;
     private const string ContentPanelNodeName = "AiTeammateContentPanel";
     private const string PickerScreenNodeName = "AiTeammateSlotCharacterPickerScreen";
     private const string AscensionPanelNodeName = "AscensionPanel";
@@ -215,7 +215,7 @@ public partial class AiTeammateCharacterSetupScreen : NSubmenu, IStartRunLobbyLi
         slotsRow.AddChild(CreateSlotButton(0, "Human Player", "Required", allowPicker: true));
         slotsRow.AddChild(CreateDivider());
 
-        for (var slotIndex = 1; slotIndex < 5; slotIndex++)
+        for (var slotIndex = 1; slotIndex < MaxPlayerCount; slotIndex++)
         {
             slotsRow.AddChild(CreateSlotButton(slotIndex, $"AI Player {slotIndex}", "Optional", allowPicker: true));
         }

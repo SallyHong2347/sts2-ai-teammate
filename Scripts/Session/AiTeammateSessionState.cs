@@ -19,7 +19,7 @@ internal sealed class AiTeammateSessionState
     private const ulong AiNetIdOffset = 10_000UL;
     private const int HostSlotIndex = 0;
     private const int FirstAiSlotIndex = 1;
-    private const int LastAiSlotIndex = 4;
+    private const int LastAiSlotIndex = 3;
 
     public AiTeammateSessionState(
         ulong hostPlayerId,
