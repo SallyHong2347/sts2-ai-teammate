@@ -150,6 +150,11 @@ internal sealed partial class AiTeammateDummyController
             return DiscoverRestSiteActions(player);
         }
 
+        if (runState.CurrentRoom is MegaCrit.Sts2.Core.Rooms.MerchantRoom)
+        {
+            return DiscoverMerchantActions(player);
+        }
+
         return Array.Empty<AiTeammateAvailableAction>();
     }
 

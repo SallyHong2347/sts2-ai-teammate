@@ -4,14 +4,21 @@ namespace AITeammate.Scripts;
 
 internal sealed class AiTeammateTestActMap : ActMap
 {
-    private const int GridWidth = 7;
+    public const int EventChainColumn = 6;
+    public const int FakeMerchantColumn = 9;
+    public const int BranchRow = 1;
+    public const int EventChainStartRow = 1;
+    public const int EventChainMiddleRow = 2;
+    public const int EventChainEndRow = 3;
+
+    private const int GridWidth = 10;
     private const int GridHeight = 4;
-    private const int StartColumn = 3;
+    private const int StartColumn = 4;
     private const int MonsterColumn = 1;
     private const int EliteColumn = 2;
-    private const int TreasureColumn = 4;
-    private const int EventColumn = 5;
-    private const int SharedRestColumn = 3;
+    private const int TreasureColumn = 3;
+    private const int ShopColumn = 5;
+    private const int SharedRestColumn = 4;
 
     protected override MapPoint?[,] Grid { get; }
 
@@ -28,26 +35,58 @@ internal sealed class AiTeammateTestActMap : ActMap
         MapPoint smallMonster = CreatePathPoint(MonsterColumn, 1, MapPointType.Monster);
         MapPoint elite = CreatePathPoint(EliteColumn, 1, MapPointType.Elite);
         MapPoint treasure = CreatePathPoint(TreasureColumn, 1, MapPointType.Treasure);
-        MapPoint eventPoint = CreatePathPoint(EventColumn, 1, MapPointType.Unknown);
+        MapPoint shop = CreatePathPoint(ShopColumn, 1, MapPointType.Shop);
+        MapPoint eventChainStart = CreatePathPoint(EventChainColumn, EventChainStartRow, MapPointType.Unknown);
+        MapPoint eventChainMiddle = CreatePathPoint(EventChainColumn, EventChainMiddleRow, MapPointType.Unknown);
+        MapPoint eventChainEnd = CreatePathPoint(EventChainColumn, EventChainEndRow, MapPointType.Unknown);
+        MapPoint fakeMerchant = CreatePathPoint(FakeMerchantColumn, BranchRow, MapPointType.Unknown);
         MapPoint restSite = CreatePathPoint(SharedRestColumn, 2, MapPointType.RestSite);
         MapPoint followUpMonster = CreatePathPoint(SharedRestColumn, 3, MapPointType.Monster);
 
         StartingMapPoint.AddChildPoint(smallMonster);
         StartingMapPoint.AddChildPoint(elite);
         StartingMapPoint.AddChildPoint(treasure);
-        StartingMapPoint.AddChildPoint(eventPoint);
+        StartingMapPoint.AddChildPoint(shop);
+        StartingMapPoint.AddChildPoint(eventChainStart);
+        StartingMapPoint.AddChildPoint(fakeMerchant);
 
         smallMonster.AddChildPoint(restSite);
         elite.AddChildPoint(restSite);
         treasure.AddChildPoint(restSite);
-        eventPoint.AddChildPoint(restSite);
+        shop.AddChildPoint(restSite);
+        eventChainStart.AddChildPoint(eventChainMiddle);
+        eventChainMiddle.AddChildPoint(eventChainEnd);
+        eventChainEnd.AddChildPoint(BossMapPoint);
+        fakeMerchant.AddChildPoint(restSite);
         restSite.AddChildPoint(followUpMonster);
         followUpMonster.AddChildPoint(BossMapPoint);
 
         startMapPoints.Add(smallMonster);
         startMapPoints.Add(elite);
         startMapPoints.Add(treasure);
-        startMapPoints.Add(eventPoint);
+        startMapPoints.Add(shop);
+        startMapPoints.Add(eventChainStart);
+        startMapPoints.Add(fakeMerchant);
+    }
+
+    public static bool IsAromaOfChaosCoord(MapCoord? coord)
+    {
+        return coord is { col: EventChainColumn, row: EventChainStartRow };
+    }
+
+    public static bool IsDrowningBeaconCoord(MapCoord? coord)
+    {
+        return coord is { col: EventChainColumn, row: EventChainMiddleRow };
+    }
+
+    public static bool IsWellspringCoord(MapCoord? coord)
+    {
+        return coord is { col: EventChainColumn, row: EventChainEndRow };
+    }
+
+    public static bool IsFakeMerchantCoord(MapCoord? coord)
+    {
+        return coord is { col: FakeMerchantColumn, row: BranchRow };
     }
 
     private MapPoint CreatePathPoint(int col, int row, MapPointType pointType)

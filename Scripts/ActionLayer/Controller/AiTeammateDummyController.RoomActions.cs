@@ -6,6 +6,7 @@ using HarmonyLib;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Entities.RestSite;
 using MegaCrit.Sts2.Core.Events;
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
 using MegaCrit.Sts2.Core.Runs;
@@ -34,36 +35,60 @@ internal sealed partial class AiTeammateDummyController
         EventModel eventForPlayer = synchronizer.GetEventForPlayer(player);
         IReadOnlyList<EventOption> options = eventForPlayer.CurrentOptions;
         string eventFingerprint = BuildEventActionFingerprint(synchronizer, eventForPlayer);
+        EventPlanningInspection inspection = InspectCurrentEventPlan(player, synchronizer, eventForPlayer, eventFingerprint);
+        EventExecutionSelection selection = ResolveEventExecutionSelection(
+            player,
+            synchronizer,
+            eventForPlayer,
+            inspection,
+            eventFingerprint,
+            phase: "discover");
 
-        for (int optionIndex = 0; optionIndex < options.Count; optionIndex++)
+        if (selection.OptionIndex < 0 || selection.SelectedOption == null)
         {
-            EventOption option = options[optionIndex];
-            if (option.IsLocked)
-            {
-                continue;
-            }
-
-            return
-            [
-                new AiTeammateAvailableAction(
-                    new AiLegalActionOption
-                    {
-                        ActionId = BuildEventOptionActionId(eventFingerprint, optionIndex),
-                        ActionType = AiTeammateActionKind.ChooseEventOption.ToString(),
-                        Description = $"Choose event option {option.TextKey}",
-                        Label = $"Event option {option.TextKey}",
-                        Summary = $"Choose event option {option.TextKey}."
-                    },
-                    async () =>
-                    {
-                        await ChooseEventOptionAsync(synchronizer, player, optionIndex);
-                        return AiActionExecutionResult.Completed;
-                    },
-                    $"{PlayerId}:event:{eventFingerprint}:{optionIndex}")
-            ];
+            return [];
         }
 
-        return [];
+        return
+        [
+            new AiTeammateAvailableAction(
+                new AiLegalActionOption
+                {
+                    ActionId = BuildEventOptionActionId(eventFingerprint, selection.OptionIndex),
+                    ActionType = AiTeammateActionKind.ChooseEventOption.ToString(),
+                    Description = $"Choose event option {selection.SelectedOption.TextKey}",
+                    Label = $"Event option {selection.SelectedOption.TextKey}",
+                    Summary = $"Choose event option {selection.SelectedOption.TextKey}."
+                },
+                async () =>
+                {
+                    EventModel liveEvent = synchronizer.GetEventForPlayer(player);
+                    EventExecutionSelection liveSelection = ResolveEventExecutionSelection(
+                        player,
+                        synchronizer,
+                        liveEvent,
+                        inspection,
+                        eventFingerprint,
+                        phase: "execute");
+                    if (liveSelection.OptionIndex < 0 || liveSelection.SelectedOption == null)
+                    {
+                        return AiActionExecutionResult.Completed;
+                    }
+
+                    if (string.Equals(liveSelection.SelectionMode, "planner", System.StringComparison.Ordinal))
+                    {
+                        Log.Info($"[AITeammate][Event] Executing planner-selected event option player={PlayerId} optionIndex={liveSelection.OptionIndex} textKey={liveSelection.SelectedOption.TextKey} title=\"{DescribeOptionTitle(liveSelection.SelectedOption)}\"");
+                    }
+                    else
+                    {
+                        Log.Info($"[AITeammate][Event] Executing fallback event option player={PlayerId} optionIndex={liveSelection.OptionIndex} textKey={liveSelection.SelectedOption.TextKey} title=\"{DescribeOptionTitle(liveSelection.SelectedOption)}\" reason={liveSelection.Reason}");
+                    }
+
+                    await ChooseEventOptionAsync(synchronizer, player, liveSelection.OptionIndex);
+                    return AiActionExecutionResult.Completed;
+                },
+                $"{PlayerId}:event:{eventFingerprint}:{selection.OptionIndex}")
+        ];
     }
 
     private IReadOnlyList<AiTeammateAvailableAction> DiscoverRestSiteActions(Player player)

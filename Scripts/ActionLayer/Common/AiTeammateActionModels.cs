@@ -13,6 +13,8 @@ internal enum AiTeammateActionKind
     ChooseEventOption,
     ChooseRestSiteOption,
     ClaimReward,
+    InspectShopState,
+    ExecuteShopStep,
 }
 
 internal sealed class AiTeammateAvailableAction

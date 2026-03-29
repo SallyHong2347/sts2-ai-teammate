@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Entities.CardRewardAlternatives;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
+using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Logging;
@@ -22,6 +23,7 @@ internal sealed partial class AiTeammateDummyController
 {
     private static readonly FieldInfo? CardRewardCardsField =
         typeof(CardReward).GetField("_cards", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly CardChoiceEvaluator CardEvaluator = new();
 
     public static async Task ExecuteDeterministicRewardSetAsync(RewardsSet rewardsSet)
     {
@@ -46,7 +48,18 @@ internal sealed partial class AiTeammateDummyController
             return false;
         }
 
-        CardModel? selected = cards.FirstOrDefault()?.Card;
+        CardChoiceDecision decision = CardEvaluator.EvaluateCandidates(
+            cards.Select(static card => card.Card),
+            CardEvaluator.ContextFactory.Create(
+                reward.Player,
+                CardChoiceSource.Reward,
+                reward.CanSkip,
+                debugSource: "card_reward"));
+        LogCardChoiceDecision(reward.Player, decision, "reward");
+
+        CardModel? selected = decision.ShouldTakeCard
+            ? decision.BestEvaluation?.CandidateCard
+            : null;
         if (selected != null)
         {
             CardPileAddResult addResult = await CardPileCmd.Add(selected, PileType.Deck);
@@ -60,6 +73,10 @@ internal sealed partial class AiTeammateDummyController
                 cards.RemoveAll(card => card.Card == selected);
                 Log.Info($"[AITeammate] Deterministic card reward picked player={reward.Player.NetId} card={addedCard.Id.Entry}");
             }
+        }
+        else
+        {
+            Log.Info($"[AITeammate] Deterministic card reward skipped player={reward.Player.NetId} threshold={decision.SkipThreshold:F1}");
         }
 
         foreach (CardCreationResult card in cards)
@@ -75,10 +92,22 @@ internal sealed partial class AiTeammateDummyController
 
     public static async Task<CardModel?> ChooseFirstCardFromChooseScreenAsync(
         PlayerChoiceContext context,
-        IReadOnlyList<CardModel> cards)
+        IReadOnlyList<CardModel> cards,
+        Player player,
+        bool canSkip)
     {
-        CardModel? chosen = cards.FirstOrDefault();
-        return chosen;
+        CardChoiceSource source = canSkip ? CardChoiceSource.ChooseScreen : CardChoiceSource.ForcedChoice;
+        CardChoiceDecision decision = CardEvaluator.EvaluateCandidates(
+            cards,
+            CardEvaluator.ContextFactory.Create(
+                player,
+                source,
+                canSkip,
+                debugSource: "choose_a_card"));
+        LogCardChoiceDecision(player, decision, "choose_screen");
+        return decision.ShouldTakeCard
+            ? decision.BestEvaluation?.CandidateCard
+            : null;
     }
 
     public static async Task<IEnumerable<CardModel>> ChooseDeterministicCardsAsync(
@@ -156,6 +185,18 @@ internal sealed partial class AiTeammateDummyController
     private static List<CardCreationResult> GetCardRewardCards(CardReward reward)
     {
         return CardRewardCardsField?.GetValue(reward) as List<CardCreationResult> ?? [];
+    }
+
+    private static void LogCardChoiceDecision(Player player, CardChoiceDecision decision, string source)
+    {
+        Log.Info($"[AITeammate] Card evaluation player={player.NetId} source={source} {decision.Describe()}");
+        foreach (CardEvaluationResult result in decision.RankedResults.Take(3))
+        {
+            string reasons = result.Reasons.Count > 0
+                ? string.Join(", ", result.Reasons)
+                : "no_reasons";
+            Log.Info($"[AITeammate] Card evaluation rank player={player.NetId} source={source} {result.Describe()} reasons=[{reasons}]");
+        }
     }
 
     private sealed class DeterministicCardSelector : ICardSelector

@@ -30,7 +30,7 @@ internal static class AiTeammateCardSelectionPatches
                 return true;
             }
 
-            __result = AiTeammateDummyController.ChooseFirstCardFromChooseScreenAsync(context, cards);
+            __result = AiTeammateDummyController.ChooseFirstCardFromChooseScreenAsync(context, cards, player, canSkip);
             return false;
         }
     }
@@ -161,6 +161,13 @@ internal static class AiTeammateCardSelectionPatches
             if (sortingOrder != null)
             {
                 options = options.OrderBy(sortingOrder);
+            }
+
+            if (string.Equals(prefs.Prompt.LocEntryKey, CardSelectorPrefs.RemoveSelectionPrompt.LocEntryKey, StringComparison.Ordinal) &&
+                AiTeammateDummyController.TryConsumePendingShopRemovalSelection(player, options, out IEnumerable<CardModel> selectedRemovalCards))
+            {
+                __result = Task.FromResult(selectedRemovalCards);
+                return false;
             }
 
             __result = AiTeammateDummyController.ChooseDeterministicCardsAsync(
