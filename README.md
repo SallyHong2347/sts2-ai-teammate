@@ -71,10 +71,56 @@ For players:
 
 For local builds:
 
-- set `STS2_DIR`, or pass `Sts2Dir`, to point at your Slay the Spire 2 install
-- run `dotnet build`
+- the project reads the game install path from the `Sts2Dir` MSBuild property
+- by default, `sts2AITeammate.csproj` sets `Sts2Dir` to `C:\Program Files (x86)\Steam\steamapps\common\Slay the Spire 2 - ModDev`
+- if your game lives somewhere else, you can either:
+  - edit the default `Sts2Dir` value in `sts2AITeammate.csproj`
+  - set the `STS2_DIR` environment variable
+  - pass `Sts2Dir` directly on the command line
+- then run `dotnet build`
+
+Examples:
+
+```powershell
+$env:STS2_DIR = "D:\Games\Slay the Spire 2 - ModDev"
+dotnet build
+```
+
+```powershell
+dotnet build -p:Sts2Dir="D:\Games\Slay the Spire 2 - ModDev"
+```
 
 The project copies the built mod into the game's `mods/` folder after a successful build.
+
+## Launching and capturing logs
+
+For local testing, this repo assumes a mod-dev game folder that includes:
+
+- `launch_opengl_moddev_debug.bat`
+- `steam_appid.txt`
+
+Example contents:
+
+`launch_opengl_moddev_debug.bat`
+
+```bat
+@echo off
+"%~dp0SlayTheSpire2.exe" --log --verbose -log Generic Debug --rendering-driver opengl3 %*
+```
+
+`steam_appid.txt`
+
+```text
+2868840
+```
+
+To launch the game and capture the output into the mod folder:
+
+```powershell
+./launch_opengl_moddev_debug.bat > ./mods/sts2AITeammate/aiteammate_launch_debug.log 2>&1
+```
+
+That log file is useful when testing AI behavior, room flow, and release packaging.
 
 ## Known limitations
 
