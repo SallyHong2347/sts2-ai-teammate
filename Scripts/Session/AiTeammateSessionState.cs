@@ -127,10 +127,24 @@ internal static class AiTeammateSessionRegistry
         return false;
     }
 
+    public static bool TryGetParticipant(ulong playerId, out AiTeammateSessionParticipant participant)
+    {
+        foreach (AiTeammateSessionParticipant currentParticipant in Current?.Participants ?? Array.Empty<AiTeammateSessionParticipant>())
+        {
+            if (currentParticipant.PlayerId == playerId)
+            {
+                participant = currentParticipant;
+                return true;
+            }
+        }
+
+        participant = default;
+        return false;
+    }
+
     public static bool ShouldUseTestMap(RunState? runState)
     {
         return Current?.UseTestMap == true &&
-               runState != null &&
-               runState.CurrentActIndex == 0;
+               runState != null;
     }
 }

@@ -314,6 +314,8 @@ internal sealed class CombatTurnLinePlanner
 
         public LineNode Apply(DeterministicCombatContext context, PlannableAction action)
         {
+            AiCombatStatusWeights status = context.CombatConfig.Combat.StatusWeights;
+            AiCombatResourceWeights resource = context.CombatConfig.Combat.ResourceWeights;
             LineNode next = new(this)
             {
                 EnergyRemaining = Math.Max(0, EnergyRemaining - action.EnergyCost + action.EnergyGain)
@@ -374,17 +376,17 @@ internal sealed class CombatTurnLinePlanner
 
             if (action.IsSetup)
             {
-                next.SetupScore += 10;
+                next.SetupScore += resource.SetupActionBonus;
             }
 
             if (action.SelfStrength > 0 || action.SelfTemporaryStrength > 0)
             {
-                next.SetupScore += CountAffordableUnconsumedActions(next, context, requireDamage: true) * (action.SelfStrength * 5 + action.SelfTemporaryStrength * 8);
+                next.SetupScore += CountAffordableUnconsumedActions(next, context, requireDamage: true) * (action.SelfStrength * status.SetupPersistentStrengthValue + action.SelfTemporaryStrength * status.SetupTemporaryStrengthValue);
             }
 
             if (action.SelfDexterity > 0 || action.SelfTemporaryDexterity > 0)
             {
-                next.SetupScore += CountAffordableUnconsumedActions(next, context, requireBlock: true) * (action.SelfDexterity * 4 + action.SelfTemporaryDexterity * 8);
+                next.SetupScore += CountAffordableUnconsumedActions(next, context, requireBlock: true) * (action.SelfDexterity * status.SetupPersistentDexterityValue + action.SelfTemporaryDexterity * status.SetupTemporaryDexterityValue);
             }
 
             if (action.CardsDrawn > 0)
@@ -392,17 +394,17 @@ internal sealed class CombatTurnLinePlanner
                 int futurePlayableActions = CountAffordableUnconsumedActions(next, context);
                 if (next.EnergyRemaining > 0 && futurePlayableActions > 0)
                 {
-                    next.SetupScore += action.CardsDrawn * 10;
+                    next.SetupScore += action.CardsDrawn * resource.SetupDrawValueWhenPlayable;
                 }
                 else
                 {
-                    next.SetupScore -= action.CardsDrawn * 10;
+                    next.SetupScore -= action.CardsDrawn * resource.SetupDrawPenaltyWhenNotPlayable;
                 }
             }
 
             if (action.EnergyGain > 0)
             {
-                next.SetupScore += action.EnergyGain * 14;
+                next.SetupScore += action.EnergyGain * resource.SetupEnergyGainValue;
             }
 
             next.StopExpanding = action.IsHighVariance || next.ActionIds.Count >= MaxLineLength;
@@ -452,6 +454,11 @@ internal sealed class CombatTurnLinePlanner
 
         public int ComputeTerminalScore(DeterministicCombatContext context, IReadOnlyList<PlannableAction> actions)
         {
+            AiCharacterCombatTuning tuning = context.CombatConfig.Combat;
+            AiCombatCoreWeights core = tuning.CoreWeights;
+            AiCombatStatusWeights status = tuning.StatusWeights;
+            AiCombatResourceWeights resource = tuning.ResourceWeights;
+            AiCombatRiskProfile risk = tuning.RiskProfile;
             int incomingDamage = Math.Max(0, context.IncomingDamage - DamagePreventedByKills - DamagePreventedByWeak);
             int availableBlock = context.CurrentBlock + TotalBlockGained;
             int damageTaken = Math.Max(0, incomingDamage - availableBlock);
@@ -463,31 +470,31 @@ internal sealed class CombatTurnLinePlanner
                 action.EnergyCost <= EnergyRemaining);
 
             int score = BaseScore;
-            score += preventedByBlock * 18;
-            score -= damageTaken * 30;
-            score += DamagePreventedByKills * 10;
-            score += DamagePreventedByWeak * 10;
-            score += TotalDamageDealt * 3;
+            score += risk.ApplySurvivalWeight(preventedByBlock * risk.PreventedDamageValuePerPoint);
+            score -= risk.ApplySurvivalWeight(damageTaken * risk.DamageTakenPenaltyPerPoint);
+            score += DamagePreventedByKills * risk.KillPreventionValuePerPoint;
+            score += DamagePreventedByWeak * risk.WeakPreventionValuePerPoint;
+            score += risk.ApplyAttackWeight(TotalDamageDealt * core.LineDamageValuePerPoint);
             score += SetupScore;
-            score += leftoverBlock * 4;
-            score += _deadEnemyIds.Count * 45;
-            score += StrengthGained * 10;
-            score += TemporaryStrengthGained * 16;
-            score += DexterityGained * 8;
-            score += TemporaryDexterityGained * (incomingDamage > 0 ? 18 : 10);
-            score += EnergyGenerated * 14;
-            score += CardsDrawn * (remainingAffordableActions > 0 ? 4 : -4);
-            score -= EnergyRemaining * 18;
-            score -= remainingAffordableActions * 24;
+            score += risk.ApplyDefenseWeight(leftoverBlock * core.LeftoverBlockValuePerPoint);
+            score += _deadEnemyIds.Count * risk.DeadEnemyReward;
+            score += StrengthGained * status.LinePersistentStrengthValue;
+            score += TemporaryStrengthGained * status.LineTemporaryStrengthValue;
+            score += DexterityGained * status.LinePersistentDexterityValue;
+            score += TemporaryDexterityGained * (incomingDamage > 0 ? status.LineTemporaryDexterityThreatenedValue : status.LineTemporaryDexteritySafeValue);
+            score += EnergyGenerated * resource.LineEnergyGeneratedValue;
+            score += CardsDrawn * (remainingAffordableActions > 0 ? resource.LineCardsDrawnValueWhenUsable : -resource.LineCardsDrawnPenaltyWhenNotUsable);
+            score -= EnergyRemaining * resource.RemainingEnergyPenalty;
+            score -= remainingAffordableActions * resource.RemainingAffordableActionsPenalty;
 
             if (damageTaken == 0 && preventedByBlock > 0)
             {
-                score += 60;
+                score += risk.PerfectDefenseBonus;
             }
 
             if (damageTaken > 0 && TotalBlockGained == 0 && DamagePreventedByWeak == 0)
             {
-                score -= 35;
+                score -= risk.ExposedDamageWithoutDefensePenalty;
             }
 
             return score;

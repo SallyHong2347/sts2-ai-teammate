@@ -49,6 +49,11 @@ internal sealed partial class AiTeammateDummyController
 
     public void Tick()
     {
+        if (TryGetControlledPlayer(out Player controlledPlayer, out RunState controlledRunState))
+        {
+            AiTeammateTestCombatHelper.ApplyOneHpEnemiesIfNeeded(controlledPlayer, controlledRunState);
+        }
+
         if (_isExecutingAction || DateTime.UtcNow < _nextDecisionAtUtc)
         {
             return;

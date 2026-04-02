@@ -8,21 +8,21 @@ namespace AITeammate.Scripts;
 
 internal sealed class EventValuationHelpers
 {
-    public double EvaluateRelic(string? relicId, string? rarity, EventVisitState snapshot, List<string> reasons)
+    public double EvaluateRelic(string? relicId, string? rarity, EventVisitState snapshot, List<string> reasons, AiEventTuning tuning)
     {
         double totalScore = rarity switch
         {
-            "Ancient" => 28d,
-            "Rare" => 21d,
-            "Uncommon" => 15d,
-            "Common" => 10d,
-            _ => 8d
+            "Ancient" => tuning.RelicWeights.AncientBaseline,
+            "Rare" => tuning.RelicWeights.RareBaseline,
+            "Uncommon" => tuning.RelicWeights.UncommonBaseline,
+            "Common" => tuning.RelicWeights.CommonBaseline,
+            _ => tuning.RelicWeights.FallbackBaseline
         };
 
         reasons.Add($"relicBaseline={totalScore:F1}");
         if (string.IsNullOrEmpty(relicId))
         {
-            return totalScore;
+            return totalScore * tuning.OutcomeWeights.RelicRewardMultiplier;
         }
 
         string upper = relicId.ToUpperInvariant();
@@ -36,18 +36,19 @@ internal sealed class EventValuationHelpers
 
         if (snapshot.RelicIds.Contains(upper))
         {
-            totalScore -= 20d;
-            reasons.Add("duplicate or already-owned effect penalty -20.0");
+            totalScore -= tuning.RelicWeights.DuplicateOwnedPenalty;
+            reasons.Add($"duplicate or already-owned effect penalty -{tuning.RelicWeights.DuplicateOwnedPenalty:F1}");
         }
 
-        return totalScore;
+        return totalScore * tuning.OutcomeWeights.RelicRewardMultiplier;
 
         void AddRelicPatternBonus(string pattern, double bonus, string reason)
         {
             if (upper.Contains(pattern, StringComparison.Ordinal))
             {
-                totalScore += bonus;
-                reasons.Add($"{reason} +{bonus:F1}");
+                double scaledBonus = bonus * tuning.RelicWeights.SpecialRelicBonusMultiplier;
+                totalScore += scaledBonus;
+                reasons.Add($"{reason} +{scaledBonus:F1}");
             }
         }
     }
@@ -57,72 +58,34 @@ internal sealed class EventValuationHelpers
         string? rarity,
         int count,
         EventVisitState snapshot,
-        List<string> reasons)
+        List<string> reasons,
+        AiEventTuning tuning)
     {
-        double singlePotionScore = rarity switch
-        {
-            "Event" => 14d,
-            "Rare" => 12d,
-            "Uncommon" => 8d,
-            "Common" => 5d,
-            _ => 4d
-        };
-
-        if (!snapshot.Player.HasOpenPotionSlots)
-        {
-            singlePotionScore -= 20d;
-            reasons.Add("no open potion slots -20.0");
-        }
-
-        if (snapshot.RelicIds.Contains("SOZU"))
-        {
-            singlePotionScore -= 30d;
-            reasons.Add("Sozu blocks procurement -30.0");
-        }
-
-        if (!string.IsNullOrEmpty(potionId))
-        {
-            string upper = potionId.ToUpperInvariant();
-            if (MatchesAny(upper, "BLOCK", "ARMOR", "DEX", "GHOST"))
-            {
-                double defenseBonus = snapshot.DeckSummary.BlockSources < 6 ? 6d : 3d;
-                singlePotionScore += defenseBonus;
-                reasons.Add($"defensive coverage +{defenseBonus:F1}");
-            }
-
-            if (MatchesAny(upper, "FIRE", "EXPLOS", "ATTACK", "STRENGTH", "FEAR", "VULNERABLE"))
-            {
-                double offenseBonus = snapshot.DeckSummary.FrontloadDamageSources < 7 ? 6d : 3d;
-                singlePotionScore += offenseBonus;
-                reasons.Add($"offensive reach +{offenseBonus:F1}");
-            }
-
-            if (MatchesAny(upper, "ENERGY", "DRAW", "GAMBLER", "AMBROSIA", "LIQUID"))
-            {
-                double tempoBonus = snapshot.DeckSummary.DrawSources < 2 || snapshot.DeckSummary.EnergySources < 1 ? 7d : 4d;
-                singlePotionScore += tempoBonus;
-                reasons.Add($"tempo coverage +{tempoBonus:F1}");
-            }
-        }
-
-        double total = singlePotionScore * Math.Max(1, count);
-        reasons.Add($"potionTotal={total:F1}");
-        return total;
+        return PotionHeuristicEvaluator.EvaluateAcquisitionScore(
+            snapshot.Player,
+            snapshot.DeckSummary,
+            potionId,
+            rarity,
+            count,
+            snapshot.Player.HasOpenPotionSlots,
+            snapshot.RelicIds.Contains("SOZU"),
+            reasons) * tuning.OutcomeWeights.PotionRewardMultiplier;
     }
 
-    public double EvaluateFixedCardGain(IEnumerable<string> cardIds, EventVisitState snapshot, List<string> reasons)
+    public double EvaluateFixedCardGain(IEnumerable<string> cardIds, EventVisitState snapshot, List<string> reasons, AiEventTuning tuning)
     {
         double total = 0d;
         foreach (string cardId in cardIds)
         {
             if (!CardCatalogRepository.Shared.TryGet(cardId, out CardCatalogEntry? entry) || entry == null)
             {
-                total += 10d;
-                reasons.Add($"fixedCard={cardId} conservativeBaseline +10.0");
+                double fallbackScore = 10d * tuning.OutcomeWeights.FixedCardRewardMultiplier;
+                total += fallbackScore;
+                reasons.Add($"fixedCard={cardId} conservativeBaseline +{fallbackScore:F1}");
                 continue;
             }
 
-            double score = EvaluateCatalogCard(entry);
+            double score = EvaluateCatalogCard(entry) * tuning.OutcomeWeights.FixedCardRewardMultiplier;
             total += score;
             reasons.Add($"fixedCard={entry.CardId} cardEval={score:F1}");
         }
@@ -269,7 +232,7 @@ internal sealed class EventValuationHelpers
             .FirstOrDefault();
     }
 
-    public double EvaluateBestUpgradeTarget(EventVisitState snapshot, int count, List<string> reasons)
+    public double EvaluateBestUpgradeTarget(EventVisitState snapshot, int count, List<string> reasons, AiEventTuning tuning)
     {
         List<(string CardId, string Name, double Score, List<string> Reasons)> candidates = [];
         foreach (CardModel card in snapshot.Player.Deck.Cards.Where(static card => card.IsUpgradable))
@@ -283,17 +246,17 @@ internal sealed class EventValuationHelpers
             }
             else
             {
-                score += EvaluateUpgradeSpec(entry.UpgradeSpec, candidateReasons);
+                score += EvaluateUpgradeSpec(entry.UpgradeSpec, candidateReasons, tuning);
                 if (entry.Rarity == "Basic")
                 {
-                    score += 2d;
-                    candidateReasons.Add("basic card cleanup/value +2.0");
+                    score += tuning.OutcomeWeights.UpgradeBasicCardBonus;
+                    candidateReasons.Add($"basic card cleanup/value +{tuning.OutcomeWeights.UpgradeBasicCardBonus:F1}");
                 }
 
                 if (entry.Type == CardType.Power)
                 {
-                    score += 2d;
-                    candidateReasons.Add("power upgrade bias +2.0");
+                    score += tuning.OutcomeWeights.UpgradePowerCardBonus;
+                    candidateReasons.Add($"power upgrade bias +{tuning.OutcomeWeights.UpgradePowerCardBonus:F1}");
                 }
             }
 
@@ -306,7 +269,7 @@ internal sealed class EventValuationHelpers
             .Take(Math.Max(1, count))
             .ToList();
 
-        double total = best.Sum(static candidate => candidate.Score);
+        double total = best.Sum(static candidate => candidate.Score) * tuning.OutcomeWeights.UpgradeRewardMultiplier;
         foreach (var candidate in best)
         {
             reasons.Add($"bestUpgradeTarget={candidate.CardId} score={candidate.Score:F1} detail=[{string.Join(", ", candidate.Reasons)}]");
@@ -315,13 +278,14 @@ internal sealed class EventValuationHelpers
         return total;
     }
 
-    public double EvaluateTransform(EventVisitState snapshot, int count, List<string> reasons)
+    public double EvaluateTransform(EventVisitState snapshot, int count, List<string> reasons, AiEventTuning tuning)
     {
         EventRemovalCandidate? removalCandidate = SelectBestRemovalCandidate(snapshot);
         double removalValue = removalCandidate?.BurdenScore ?? 0d;
-        double expectedReplacementValue = 11d * Math.Max(1, count);
-        double total = (removalValue * 0.65d) + expectedReplacementValue;
-        reasons.Add($"transformRemovalValue={(removalValue * 0.65d):F1}");
+        double expectedReplacementValue = tuning.OutcomeWeights.TransformReplacementBaselinePerCard * Math.Max(1, count);
+        double total = ((removalValue * tuning.OutcomeWeights.TransformRemovalValueMultiplier) + expectedReplacementValue) *
+                       tuning.OutcomeWeights.TransformRewardMultiplier;
+        reasons.Add($"transformRemovalValue={(removalValue * tuning.OutcomeWeights.TransformRemovalValueMultiplier):F1}");
         reasons.Add($"transformReplacementBaseline={expectedReplacementValue:F1}");
         if (removalCandidate != null)
         {
@@ -331,7 +295,7 @@ internal sealed class EventValuationHelpers
         return total;
     }
 
-    public double EvaluateHpPenalty(EventVisitState snapshot, int hpLoss, bool willKillPlayer, List<string> reasons)
+    public double EvaluateHpPenalty(EventVisitState snapshot, int hpLoss, bool willKillPlayer, List<string> reasons, AiEventTuning tuning)
     {
         if (hpLoss <= 0)
         {
@@ -341,10 +305,10 @@ internal sealed class EventValuationHelpers
         double hpRatio = snapshot.MaxHp > 0 ? (double)snapshot.CurrentHp / snapshot.MaxHp : 0d;
         double perHpPenalty = hpRatio switch
         {
-            <= 0.25d => 4.8d,
-            <= 0.40d => 3.8d,
-            <= 0.60d => 2.9d,
-            _ => 2.0d
+            <= 0.25d => tuning.RiskProfile.HpPenaltyCriticalPerPoint,
+            <= 0.40d => tuning.RiskProfile.HpPenaltyLowPerPoint,
+            <= 0.60d => tuning.RiskProfile.HpPenaltyMidPerPoint,
+            _ => tuning.RiskProfile.HpPenaltyHealthyPerPoint
         };
         double total = hpLoss * perHpPenalty;
         reasons.Add($"hpPenaltyPerPoint={perHpPenalty:F1}");
@@ -352,38 +316,38 @@ internal sealed class EventValuationHelpers
 
         if (willKillPlayer)
         {
-            total += 1000d;
-            reasons.Add("lethal option penalty -1000.0");
+            total += tuning.RiskProfile.LethalOptionPenalty;
+            reasons.Add($"lethal option penalty -{tuning.RiskProfile.LethalOptionPenalty:F1}");
         }
 
         return total;
     }
 
-    public double EvaluateMaxHpPenalty(int maxHpDelta, List<string> reasons)
+    public double EvaluateMaxHpPenalty(int maxHpDelta, List<string> reasons, AiEventTuning tuning)
     {
         if (maxHpDelta >= 0)
         {
             return 0d;
         }
 
-        double total = Math.Abs(maxHpDelta) * 4.5d;
+        double total = Math.Abs(maxHpDelta) * tuning.RiskProfile.MaxHpLossPenaltyPerPoint;
         reasons.Add($"maxHpPenalty={-total:F1}");
         return total;
     }
 
-    public double EvaluateGoldDelta(int goldDelta, List<string> reasons)
+    public double EvaluateGoldDelta(int goldDelta, List<string> reasons, AiEventTuning tuning)
     {
         if (goldDelta == 0)
         {
             return 0d;
         }
 
-        double total = goldDelta / 12d;
+        double total = goldDelta / tuning.OutcomeWeights.GoldValueDivisor;
         reasons.Add($"goldDeltaScore={(total >= 0 ? "+" : string.Empty)}{total:F1}");
         return total;
     }
 
-    public double EvaluateCursePenalty(IEnumerable<string> curseIds, List<string> reasons)
+    public double EvaluateCursePenalty(IEnumerable<string> curseIds, List<string> reasons, AiEventTuning tuning)
     {
         double total = 0d;
         foreach (string curseId in curseIds)
@@ -399,7 +363,7 @@ internal sealed class EventValuationHelpers
                 "DEBT" => 16d,
                 "GUILTY" => 16d,
                 _ => 14d
-            };
+            } * tuning.RiskProfile.CursePenaltyMultiplier;
             total += penalty;
             reasons.Add($"curse={curseId} penalty={-penalty:F1}");
         }
@@ -407,7 +371,7 @@ internal sealed class EventValuationHelpers
         return total;
     }
 
-    public double EvaluateRandomnessDiscount(EventOutcomeSummary outcome, List<string> reasons)
+    public double EvaluateRandomnessDiscount(EventOutcomeSummary outcome, List<string> reasons, AiEventTuning tuning)
     {
         if (!outcome.HasRandomness)
         {
@@ -415,60 +379,61 @@ internal sealed class EventValuationHelpers
         }
 
         double discount = outcome.FixedCardCount > 0 || outcome.RelicIds.Count > 0 || outcome.PotionRewardCount > 0
-            ? 6d
-            : 10d;
+            ? tuning.RiskProfile.RandomRewardDiscount
+            : tuning.RiskProfile.RandomGenericDiscount;
         reasons.Add($"randomnessDiscount={-discount:F1}");
         return discount;
     }
 
-    public double UnsupportedOptionPenalty(bool hasUnknownEffects, List<string> reasons)
+    public double UnsupportedOptionPenalty(bool hasUnknownEffects, List<string> reasons, AiEventTuning tuning)
     {
-        double penalty = hasUnknownEffects ? 12d : 6d;
+        double penalty = hasUnknownEffects ? tuning.RiskProfile.UnknownEffectsPenalty : tuning.RiskProfile.UnsupportedPenalty;
         reasons.Add($"unsupportedPenalty={-penalty:F1}");
         return penalty;
     }
 
-    private static double EvaluateUpgradeSpec(CardUpgradeSpec spec, List<string> reasons)
+    private static double EvaluateUpgradeSpec(CardUpgradeSpec spec, List<string> reasons, AiEventTuning tuning)
     {
-        double score = 4d;
+        double score = tuning.OutcomeWeights.UpgradeSpecBaseValue;
         if (spec.CostOverride.HasValue)
         {
-            score += Math.Max(0, 2 - spec.CostOverride.Value) * 4d;
+            score += Math.Max(0, 2 - spec.CostOverride.Value) * tuning.OutcomeWeights.UpgradeCostOverrideValuePerEnergy;
             reasons.Add($"costOverride->{spec.CostOverride.Value}");
         }
         else if (spec.CostDelta < 0)
         {
-            score += Math.Abs(spec.CostDelta) * 5d;
-            reasons.Add($"costReduction +{Math.Abs(spec.CostDelta) * 5d:F1}");
+            double bonus = Math.Abs(spec.CostDelta) * tuning.OutcomeWeights.UpgradeCostReductionValuePerEnergy;
+            score += bonus;
+            reasons.Add($"costReduction +{bonus:F1}");
         }
 
         foreach ((EffectAdjustmentKey _, int value) in spec.EffectAmountAdjustments)
         {
-            score += Math.Max(0, value) * 1.5d;
+            score += Math.Max(0, value) * tuning.OutcomeWeights.UpgradePositiveEffectValuePerPoint;
         }
 
         if (spec.Retain == true)
         {
-            score += 3d;
-            reasons.Add("gains retain +3.0");
+            score += tuning.OutcomeWeights.UpgradeRetainBonus;
+            reasons.Add($"gains retain +{tuning.OutcomeWeights.UpgradeRetainBonus:F1}");
         }
 
         if (spec.Exhaust == false)
         {
-            score += 2d;
-            reasons.Add("removes exhaust +2.0");
+            score += tuning.OutcomeWeights.UpgradeRemoveExhaustBonus;
+            reasons.Add($"removes exhaust +{tuning.OutcomeWeights.UpgradeRemoveExhaustBonus:F1}");
         }
 
         if (spec.Ethereal == false)
         {
-            score += 3d;
-            reasons.Add("removes ethereal +3.0");
+            score += tuning.OutcomeWeights.UpgradeRemoveEtherealBonus;
+            reasons.Add($"removes ethereal +{tuning.OutcomeWeights.UpgradeRemoveEtherealBonus:F1}");
         }
 
         if (spec.ReplayCountOverride.HasValue && spec.ReplayCountOverride.Value > 1)
         {
-            score += 4d;
-            reasons.Add("replay increase +4.0");
+            score += tuning.OutcomeWeights.UpgradeReplayIncreaseBonus;
+            reasons.Add($"replay increase +{tuning.OutcomeWeights.UpgradeReplayIncreaseBonus:F1}");
         }
 
         reasons.Add($"upgradeSpecScore={score:F1}");
@@ -518,16 +483,4 @@ internal sealed class EventValuationHelpers
         return score;
     }
 
-    private static bool MatchesAny(string value, params string[] patterns)
-    {
-        foreach (string pattern in patterns)
-        {
-            if (value.Contains(pattern, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }

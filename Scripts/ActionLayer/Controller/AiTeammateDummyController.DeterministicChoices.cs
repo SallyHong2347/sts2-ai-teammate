@@ -168,11 +168,23 @@ internal sealed partial class AiTeammateDummyController
                     return;
                 }
 
-                PotionModel? currentPotion = potionReward.Player.Potions.FirstOrDefault();
-                if (currentPotion != null)
+                PotionModel? incomingPotion = potionReward.Potion;
+                if (incomingPotion != null &&
+                    PotionHeuristicEvaluator.TryChoosePotionToReplace(
+                        potionReward.Player,
+                        incomingPotion,
+                        out PotionModel? currentPotion,
+                        out double incomingScore,
+                        out double discardScore) &&
+                    currentPotion != null)
                 {
+                    Log.Info($"[AITeammate] Potion reward replacement player={potionReward.Player.NetId} discard={currentPotion.Id.Entry} discardScore={discardScore:F1} incoming={incomingPotion.Id.Entry} incomingScore={incomingScore:F1}");
                     await PotionCmd.Discard(currentPotion);
                     await potionReward.OnSelectWrapper();
+                }
+                else if (incomingPotion != null)
+                {
+                    Log.Info($"[AITeammate] Potion reward skipped replacement player={potionReward.Player.NetId} incoming={incomingPotion.Id.Entry}");
                 }
 
                 return;

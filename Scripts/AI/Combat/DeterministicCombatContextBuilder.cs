@@ -75,6 +75,7 @@ internal sealed class DeterministicCombatContextBuilder
             EnemiesById = enemiesById,
             ActorPowerAmounts = actorPowerAmounts,
             ActorRelicIds = actorRelicIds,
+            CombatConfig = AiCharacterCombatConfigLoader.LoadForPlayer(player),
             RoomTypeName = roomTypeName,
             IsEliteCombat = roomTypeName.Contains("Elite", StringComparison.OrdinalIgnoreCase),
             IsBossCombat = roomTypeName.Contains("Boss", StringComparison.OrdinalIgnoreCase),

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Events;
+using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
 
@@ -45,7 +46,7 @@ internal sealed class EventSnapshotBuilder
             DeckCards = context.DeckCards,
             RelicIds = context.RelicIds,
             ModifierIds = context.ModifierIds,
-            DescriptionText = runtimeEvent.Description?.GetRawText() ?? string.Empty,
+            DescriptionText = GetLocTextSafe(runtimeEvent.Description),
             DescriptionLocKey = runtimeEvent.Description?.LocEntryKey,
             Options = options
         };
@@ -56,7 +57,9 @@ internal sealed class EventSnapshotBuilder
         List<string> hoverTipKinds = option.HoverTips?
             .Select(static hoverTip => hoverTip.GetType().Name)
             .ToList() ?? [];
-        bool isLikelyLeave = LooksLikeLeaveOrExit(option.TextKey, option.Title.GetRawText(), option.Description.GetRawText());
+        string titleText = GetLocTextSafe(option.Title);
+        string descriptionText = GetLocTextSafe(option.Description);
+        bool isLikelyLeave = LooksLikeLeaveOrExit(option.TextKey, titleText, descriptionText);
         bool willKillPlayer = runtimeEvent.Owner != null && (option.WillKillPlayer?.Invoke(runtimeEvent.Owner) ?? false);
         List<EventOptionKind> kinds = [];
         List<string> notes = [];
@@ -107,8 +110,8 @@ internal sealed class EventSnapshotBuilder
         {
             OptionIndex = optionIndex,
             TextKey = option.TextKey,
-            Title = option.Title.GetRawText(),
-            Description = option.Description.GetRawText(),
+            Title = titleText,
+            Description = descriptionText,
             IsLocked = option.IsLocked,
             IsProceed = option.IsProceed,
             IsLikelyLeaveOrExit = isLikelyLeave,
@@ -126,7 +129,7 @@ internal sealed class EventSnapshotBuilder
                 TextKey = option.TextKey
             },
             RelicId = option.Relic?.Id.Entry,
-            RelicName = option.Relic?.Title?.GetRawText(),
+            RelicName = GetLocTextSafe(option.Relic?.Title),
             HoverTipKinds = hoverTipKinds,
             Kinds = kinds,
             UnknownReasons = unknownReasons,
@@ -149,5 +152,29 @@ internal sealed class EventSnapshotBuilder
                combined.Contains("ABSTAIN", StringComparison.Ordinal) ||
                combined.Contains("PROCEED", StringComparison.Ordinal) ||
                combined.Contains("IGNORE", StringComparison.Ordinal);
+    }
+
+    private static string GetLocTextSafe(LocString? locString)
+    {
+        if (locString == null || locString.IsEmpty)
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            string raw = locString.GetRawText();
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                return raw;
+            }
+        }
+        catch (LocException)
+        {
+        }
+
+        return string.IsNullOrWhiteSpace(locString.LocEntryKey)
+            ? string.Empty
+            : locString.LocEntryKey;
     }
 }

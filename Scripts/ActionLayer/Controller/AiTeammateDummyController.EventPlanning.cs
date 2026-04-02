@@ -257,16 +257,28 @@ internal sealed partial class AiTeammateDummyController
             return "none";
         }
 
-        string formatted = locString.GetFormattedText();
-        if (!string.IsNullOrWhiteSpace(formatted))
+        try
         {
-            return formatted.Replace('"', '\'');
+            string formatted = locString.GetFormattedText();
+            if (!string.IsNullOrWhiteSpace(formatted))
+            {
+                return formatted.Replace('"', '\'');
+            }
+        }
+        catch (LocException)
+        {
         }
 
-        string raw = locString.GetRawText();
-        if (!string.IsNullOrWhiteSpace(raw))
+        try
         {
-            return raw.Replace('"', '\'');
+            string raw = locString.GetRawText();
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                return raw.Replace('"', '\'');
+            }
+        }
+        catch (LocException)
+        {
         }
 
         return $"{locString.LocTable}.{locString.LocEntryKey}";

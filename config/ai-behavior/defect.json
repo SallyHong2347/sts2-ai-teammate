@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 4,
+  "characterId": "defect",
+  "displayName": "Defect",
+  "combat": {
+    "statusWeights": {
+      "persistentDexterityPerAffordableBlockValue": 7,
+      "setupPersistentDexterityValue": 5,
+      "setupTemporaryDexterityValue": 9
+    },
+    "resourceWeights": {
+      "drawValueWhenPlayable": 13,
+      "energyGainValue": 22,
+      "energyEfficiencyValue": 5,
+      "setupActionBonus": 12,
+      "setupDrawValueWhenPlayable": 13,
+      "setupEnergyGainValue": 18,
+      "lineEnergyGeneratedValue": 18,
+      "lineCardsDrawnValueWhenUsable": 6,
+      "remainingEnergyPenalty": 14
+    },
+    "riskProfile": {
+      "attackWeight": 1.02,
+      "defenseWeight": 0.98,
+      "aggressiveness": 1.03,
+      "deadEnemyReward": 48
+    }
+  },
+  "cardRewards": {
+    "intrinsicWeights": {
+      "drawValue": 10.0,
+      "energyValue": 14.0,
+      "powerBonus": 3.0
+    },
+    "synergyWeights": {
+      "drawWithHighCurveValue": 4.5,
+      "energyWithHeavyCurveValue": 6.5,
+      "drawNeedValue": 7.5,
+      "energyNeedValue": 9.5,
+      "powerWithDrawBonus": 4.0
+    },
+    "disciplineWeights": {
+      "rewardSkipThreshold": 12.5,
+      "excessEnergyPenalty": 4.0
+    }
+  },
+  "potions": {
+    "combatUse": {
+      "eliteBossOffensiveFollowUpBonus": 105,
+      "normalFightOffensiveFollowUpBonus": 30
+    },
+    "acquisition": {
+      "tempoCoverageLowNeedBonus": 9.0,
+      "tempoCoverageCoveredBonus": 5.0
+    },
+    "rewardHandling": {
+      "replacementThreshold": 0.0
+    }
+  },
+  "shop": {
+    "offerPriorities": {
+      "cardPurchaseBias": 1.0,
+      "relicPurchaseBias": 1.5,
+      "potionPurchaseBias": 0.5,
+      "removalServiceBias": -0.5,
+      "goldReserveValuePerGold": 0.02
+    },
+    "relicWeights": {
+      "specialRelicBonusMultiplier": 1.1
+    }
+  },
+  "events": {
+    "outcomeWeights": {
+      "relicRewardMultiplier": 1.1,
+      "fixedCardRewardMultiplier": 1.05,
+      "upgradeRewardMultiplier": 1.15,
+      "transformRewardMultiplier": 1.1,
+      "goldValueDivisor": 11.5
+    },
+    "riskProfile": {
+      "hpPenaltyLowPerPoint": 3.6,
+      "hpPenaltyMidPerPoint": 2.7,
+      "randomRewardDiscount": 5.5,
+      "randomGenericDiscount": 9.5
+    }
+  }
+}

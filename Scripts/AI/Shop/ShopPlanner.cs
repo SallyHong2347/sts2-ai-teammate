@@ -16,11 +16,12 @@ internal sealed class ShopPlanner
 
     public ShopPlannerResult Evaluate(ShopVisitState snapshot)
     {
+        AiShopTuning tuning = AiCharacterCombatConfigLoader.LoadForPlayer(snapshot.Player).Shop;
         Dictionary<string, ShopOffer> offersById = snapshot.Offers.ToDictionary(static offer => offer.OfferId, StringComparer.Ordinal);
 
         ShopRemovalCandidate? bestRemovalCandidate = SelectBestRemovalCandidate(snapshot);
         List<ShopOfferEvaluation> offerEvaluations = snapshot.Offers
-            .Select(offer => EvaluateOffer(snapshot, offer, bestRemovalCandidate))
+            .Select(offer => EvaluateOffer(snapshot, offer, bestRemovalCandidate, tuning))
             .OrderByDescending(static evaluation => evaluation.TotalScore)
             .ThenBy(evaluation => evaluation.Name, StringComparer.Ordinal)
             .ToList();
@@ -45,6 +46,7 @@ internal sealed class ShopPlanner
         SimulatedShopState initialState = SimulatedShopState.Create(snapshot);
         SearchPlans(
             snapshot,
+            tuning,
             offersById,
             actionEvaluationsById,
             initialState,
@@ -62,7 +64,7 @@ internal sealed class ShopPlanner
             .ToList();
 
         ShopPlan leavePlan = rankedPlans.FirstOrDefault(static plan => plan.PlanId == "leave_now")
-            ?? BuildCompletedPlan(snapshot, initialState, [], 0d);
+            ?? BuildCompletedPlan(snapshot, tuning, initialState, [], 0d);
         ShopPlan bestPlan = rankedPlans.Count > 0 ? rankedPlans[0] : leavePlan;
 
         return new ShopPlannerResult
@@ -78,19 +80,20 @@ internal sealed class ShopPlanner
     private ShopOfferEvaluation EvaluateOffer(
         ShopVisitState snapshot,
         ShopOffer offer,
-        ShopRemovalCandidate? bestRemovalCandidate)
+        ShopRemovalCandidate? bestRemovalCandidate,
+        AiShopTuning tuning)
     {
         return offer.Kind switch
         {
-            ShopOfferKind.CharacterCard or ShopOfferKind.ColorlessCard => EvaluateCardOffer(snapshot, offer),
-            ShopOfferKind.Relic => EvaluateRelicOffer(snapshot, offer),
-            ShopOfferKind.Potion => EvaluatePotionOffer(snapshot, offer),
-            ShopOfferKind.CardRemoval => EvaluateRemovalOffer(snapshot, offer, bestRemovalCandidate),
+            ShopOfferKind.CharacterCard or ShopOfferKind.ColorlessCard => EvaluateCardOffer(snapshot, offer, tuning),
+            ShopOfferKind.Relic => EvaluateRelicOffer(snapshot, offer, tuning),
+            ShopOfferKind.Potion => EvaluatePotionOffer(snapshot, offer, tuning),
+            ShopOfferKind.CardRemoval => EvaluateRemovalOffer(snapshot, offer, bestRemovalCandidate, tuning),
             _ => BuildUnavailableOfferEvaluation(offer, "unknown offer kind")
         };
     }
 
-    private ShopOfferEvaluation EvaluateCardOffer(ShopVisitState snapshot, ShopOffer offer)
+    private ShopOfferEvaluation EvaluateCardOffer(ShopVisitState snapshot, ShopOffer offer, AiShopTuning tuning)
     {
         if (offer.RuntimeCardModel == null || offer.ResolvedCard == null)
         {
@@ -121,18 +124,18 @@ internal sealed class ShopPlanner
 
         if (decision.ShouldTakeCard)
         {
-            totalScore += 4d;
+            totalScore += tuning.OfferPriorities.CardAboveThresholdBonus;
             reasons.Add("above shop buy threshold");
         }
         else
         {
-            totalScore -= 4d;
+            totalScore -= tuning.OfferPriorities.CardBelowThresholdPenalty;
             reasons.Add("below shop buy threshold");
         }
 
         if (offer.IsOnSale)
         {
-            totalScore += 2.5d;
+            totalScore += tuning.OfferPriorities.SaleBonus;
             reasons.Add("sale pricing bonus");
         }
 
@@ -155,8 +158,14 @@ internal sealed class ShopPlanner
 
         if (offer.Kind == ShopOfferKind.ColorlessCard)
         {
-            totalScore -= 1.5d;
+            totalScore -= tuning.OfferPriorities.ColorlessPremiumPenalty;
             reasons.Add("colorless premium caution");
+        }
+
+        totalScore += tuning.OfferPriorities.CardPurchaseBias;
+        if (Math.Abs(tuning.OfferPriorities.CardPurchaseBias) > 0.001d)
+        {
+            reasons.Add($"cardPurchaseBias={(tuning.OfferPriorities.CardPurchaseBias >= 0 ? "+" : string.Empty)}{tuning.OfferPriorities.CardPurchaseBias:F1}");
         }
 
         reasons.AddRange(best.Reasons);
@@ -173,7 +182,7 @@ internal sealed class ShopPlanner
         };
     }
 
-    private ShopOfferEvaluation EvaluateRelicOffer(ShopVisitState snapshot, ShopOffer offer)
+    private ShopOfferEvaluation EvaluateRelicOffer(ShopVisitState snapshot, ShopOffer offer, AiShopTuning tuning)
     {
         if (offer.RuntimeRelicModel == null)
         {
@@ -181,11 +190,12 @@ internal sealed class ShopPlanner
         }
 
         string relicId = offer.ModelId.ToUpperInvariant();
-        double totalScore = GetRelicRarityBaseline(offer.Rarity) - (offer.Cost / 12d);
+        double rarityBaseline = GetRelicRarityBaseline(tuning.RelicWeights, offer.Rarity);
+        double totalScore = rarityBaseline - (offer.Cost / tuning.RelicWeights.CostDivisor);
         List<string> reasons =
         [
-            $"rarityBaseline={GetRelicRarityBaseline(offer.Rarity):F1}",
-            $"costPenalty={-(offer.Cost / 12d):F1}"
+            $"rarityBaseline={rarityBaseline:F1}",
+            $"costPenalty={-(offer.Cost / tuning.RelicWeights.CostDivisor):F1}"
         ];
 
         AddRelicPatternBonus("MEMBERSHIP", 18d, "membership discount scales future shops");
@@ -203,7 +213,7 @@ internal sealed class ShopPlanner
                 card.CardId.Contains("STRIKE", StringComparison.OrdinalIgnoreCase));
             if (strikeCards >= 3)
             {
-                double strikeBonus = 3d + strikeCards;
+                double strikeBonus = tuning.RelicWeights.StrikeDummyBaseBonus + (tuning.RelicWeights.StrikeDummyBonusPerStrike * strikeCards);
                 totalScore += strikeBonus;
                 reasons.Add($"strike synergy +{strikeBonus:F1}");
             }
@@ -211,13 +221,13 @@ internal sealed class ShopPlanner
 
         if (snapshot.HasMembershipCard && relicId.Contains("MEMBERSHIP", StringComparison.Ordinal))
         {
-            totalScore -= 20d;
+            totalScore -= tuning.RelicWeights.DuplicateMembershipPenalty;
             reasons.Add("already owns membership effect");
         }
 
         if (snapshot.HasCourier && relicId.Contains("COURIER", StringComparison.Ordinal))
         {
-            totalScore -= 18d;
+            totalScore -= tuning.RelicWeights.DuplicateCourierPenalty;
             reasons.Add("already owns courier effect");
         }
 
@@ -231,6 +241,12 @@ internal sealed class ShopPlanner
         {
             totalScore -= 30d;
             reasons.Add("not stocked");
+        }
+
+        totalScore += tuning.OfferPriorities.RelicPurchaseBias;
+        if (Math.Abs(tuning.OfferPriorities.RelicPurchaseBias) > 0.001d)
+        {
+            reasons.Add($"relicPurchaseBias={(tuning.OfferPriorities.RelicPurchaseBias >= 0 ? "+" : string.Empty)}{tuning.OfferPriorities.RelicPurchaseBias:F1}");
         }
 
         return new ShopOfferEvaluation
@@ -248,76 +264,39 @@ internal sealed class ShopPlanner
         {
             if (relicId.Contains(pattern, StringComparison.Ordinal))
             {
-                totalScore += bonus;
-                reasons.Add($"{reason} +{bonus:F1}");
+                double scaledBonus = bonus * tuning.RelicWeights.SpecialRelicBonusMultiplier;
+                totalScore += scaledBonus;
+                reasons.Add($"{reason} +{scaledBonus:F1}");
             }
         }
     }
 
-    private ShopOfferEvaluation EvaluatePotionOffer(ShopVisitState snapshot, ShopOffer offer)
+    private ShopOfferEvaluation EvaluatePotionOffer(ShopVisitState snapshot, ShopOffer offer, AiShopTuning tuning)
     {
         if (offer.RuntimePotionModel == null)
         {
             return BuildUnavailableOfferEvaluation(offer, "missing runtime potion model");
         }
 
-        string potionId = offer.ModelId.ToUpperInvariant();
-        double totalScore = GetPotionRarityBaseline(offer.Rarity) - (offer.Cost / 11d);
-        List<string> reasons =
-        [
-            $"rarityBaseline={GetPotionRarityBaseline(offer.Rarity):F1}",
-            $"costPenalty={-(offer.Cost / 11d):F1}"
-        ];
+        List<string> reasons = [];
+        double totalScore = PotionHeuristicEvaluator.EvaluateAcquisitionScore(
+            snapshot.Player,
+            snapshot.DeckSummary,
+            offer.ModelId,
+            offer.Rarity,
+            count: 1,
+            snapshot.HasOpenPotionSlots,
+            snapshot.HasSozu,
+            reasons,
+            applyShopAdjustments: true,
+            shopCost: offer.Cost,
+            isAffordable: offer.IsAffordable,
+            isLegalNow: offer.IsPurchaseLegalNow);
 
-        if (!snapshot.HasOpenPotionSlots)
+        totalScore += tuning.OfferPriorities.PotionPurchaseBias;
+        if (Math.Abs(tuning.OfferPriorities.PotionPurchaseBias) > 0.001d)
         {
-            totalScore -= 20d;
-            reasons.Add("no open potion slots");
-        }
-
-        if (snapshot.HasSozu)
-        {
-            totalScore -= 30d;
-            reasons.Add("Sozu blocks procurement");
-        }
-
-        if (MatchesAny(potionId, "BLOCK", "ARMOR", "DEX", "GHOST"))
-        {
-            double defenseBonus = snapshot.DeckSummary.BlockSources < 6 ? 6d : 3d;
-            totalScore += defenseBonus;
-            reasons.Add($"defensive coverage +{defenseBonus:F1}");
-        }
-
-        if (MatchesAny(potionId, "FIRE", "EXPLOS", "ATTACK", "STRENGTH", "FEAR", "VULNERABLE"))
-        {
-            double offenseBonus = snapshot.DeckSummary.FrontloadDamageSources < 7 ? 6d : 3d;
-            totalScore += offenseBonus;
-            reasons.Add($"offensive reach +{offenseBonus:F1}");
-        }
-
-        if (MatchesAny(potionId, "ENERGY", "DRAW", "GAMBLER", "AMBROSIA", "LIQUID"))
-        {
-            double tempoBonus = snapshot.DeckSummary.DrawSources < 2 || snapshot.DeckSummary.EnergySources < 1 ? 7d : 4d;
-            totalScore += tempoBonus;
-            reasons.Add($"tempo coverage +{tempoBonus:F1}");
-        }
-
-        if (MatchesAny(potionId, "FAIRY", "HEART", "ELIXIR"))
-        {
-            totalScore += 8d;
-            reasons.Add("high leverage emergency value +8.0");
-        }
-
-        if (!offer.IsAffordable)
-        {
-            totalScore -= 10d;
-            reasons.Add("currently unaffordable");
-        }
-
-        if (!offer.IsPurchaseLegalNow)
-        {
-            totalScore -= 18d;
-            reasons.Add("not immediately legal");
+            reasons.Add($"potionPurchaseBias={(tuning.OfferPriorities.PotionPurchaseBias >= 0 ? "+" : string.Empty)}{tuning.OfferPriorities.PotionPurchaseBias:F1}");
         }
 
         return new ShopOfferEvaluation
@@ -335,7 +314,8 @@ internal sealed class ShopPlanner
     private ShopOfferEvaluation EvaluateRemovalOffer(
         ShopVisitState snapshot,
         ShopOffer offer,
-        ShopRemovalCandidate? bestRemovalCandidate)
+        ShopRemovalCandidate? bestRemovalCandidate,
+        AiShopTuning tuning)
     {
         List<string> reasons = [];
         if (bestRemovalCandidate == null)
@@ -356,15 +336,15 @@ internal sealed class ShopPlanner
             card.CardId.Contains("STRIKE", StringComparison.OrdinalIgnoreCase) ||
             card.CardId.Contains("DEFEND", StringComparison.OrdinalIgnoreCase));
         double deckSizeBonus = snapshot.DeckSummary.CardCount >= 20
-            ? 7d
+            ? tuning.RemovalWeights.LargeDeckBonus
             : snapshot.DeckSummary.CardCount >= 15
-                ? 4d
-                : 2d;
-        double consistencyBonus = (basicCards * 1.5d) +
-                                  (snapshot.DeckSummary.AverageCost >= 1.4d ? 2.5d : 0d) +
-                                  (snapshot.DeckSummary.ZeroCostCards == 0 ? 1d : 0d);
-        double costPenalty = offer.Cost / 8.5d;
-        double totalScore = bestRemovalCandidate.BurdenScore + deckSizeBonus + consistencyBonus - costPenalty;
+                ? tuning.RemovalWeights.MediumDeckBonus
+                : tuning.RemovalWeights.SmallDeckBonus;
+        double consistencyBonus = (basicCards * tuning.RemovalWeights.BasicCardBonusPerCard) +
+                                  (snapshot.DeckSummary.AverageCost >= 1.4d ? tuning.RemovalWeights.HeavyCurveConsistencyBonus : 0d) +
+                                  (snapshot.DeckSummary.ZeroCostCards == 0 ? tuning.RemovalWeights.NoZeroCostConsistencyBonus : 0d);
+        double costPenalty = offer.Cost / tuning.RemovalWeights.CostDivisor;
+        double totalScore = (bestRemovalCandidate.BurdenScore * tuning.RemovalWeights.BurdenMultiplier) + deckSizeBonus + consistencyBonus - costPenalty;
 
         reasons.Add($"bestTarget={bestRemovalCandidate.Name}");
         reasons.Add($"targetBurden={bestRemovalCandidate.BurdenScore:F1}");
@@ -388,6 +368,12 @@ internal sealed class ShopPlanner
         {
             totalScore -= 35d;
             reasons.Add("Hoarder prevents merchant removal");
+        }
+
+        totalScore += tuning.OfferPriorities.RemovalServiceBias;
+        if (Math.Abs(tuning.OfferPriorities.RemovalServiceBias) > 0.001d)
+        {
+            reasons.Add($"removalServiceBias={(tuning.OfferPriorities.RemovalServiceBias >= 0 ? "+" : string.Empty)}{tuning.OfferPriorities.RemovalServiceBias:F1}");
         }
 
         return new ShopOfferEvaluation
@@ -632,6 +618,7 @@ internal sealed class ShopPlanner
 
     private void SearchPlans(
         ShopVisitState snapshot,
+        AiShopTuning tuning,
         IReadOnlyDictionary<string, ShopOffer> offersById,
         IReadOnlyDictionary<string, ShopActionEvaluation> actionEvaluationsById,
         SimulatedShopState state,
@@ -649,7 +636,7 @@ internal sealed class ShopPlanner
         }
 
         bestScoreByState[stateKey] = currentScore;
-        completedPlans.Add(BuildCompletedPlan(snapshot, state, steps, currentScore));
+        completedPlans.Add(BuildCompletedPlan(snapshot, tuning, state, steps, currentScore));
 
         if (depthRemaining <= 0)
         {
@@ -679,6 +666,7 @@ internal sealed class ShopPlanner
             List<ShopPlanStep> nextSteps = steps.Concat([step]).ToList();
             SearchPlans(
                 snapshot,
+                tuning,
                 offersById,
                 actionEvaluationsById,
                 nextState,
@@ -838,6 +826,7 @@ internal sealed class ShopPlanner
 
     private static ShopPlan BuildCompletedPlan(
         ShopVisitState snapshot,
+        AiShopTuning tuning,
         SimulatedShopState state,
         IReadOnlyList<ShopPlanStep> steps,
         double currentScore)
@@ -888,7 +877,7 @@ internal sealed class ShopPlanner
         {
             PlanId = planId,
             Steps = completedSteps,
-            TotalScore = currentScore,
+            TotalScore = currentScore + (state.Gold * tuning.OfferPriorities.GoldReserveValuePerGold),
             RemainingGold = state.Gold,
             LeavesShop = true,
             OutcomeSummary = outcome
@@ -909,41 +898,16 @@ internal sealed class ShopPlanner
         };
     }
 
-    private static double GetRelicRarityBaseline(string? rarity)
+    private static double GetRelicRarityBaseline(AiShopRelicWeights weights, string? rarity)
     {
         return rarity switch
         {
-            "Ancient" => 28d,
-            "Rare" => 21d,
-            "Uncommon" => 15d,
-            "Common" => 10d,
-            _ => 8d
+            "Ancient" => weights.AncientBaseline,
+            "Rare" => weights.RareBaseline,
+            "Uncommon" => weights.UncommonBaseline,
+            "Common" => weights.CommonBaseline,
+            _ => weights.FallbackBaseline
         };
-    }
-
-    private static double GetPotionRarityBaseline(string? rarity)
-    {
-        return rarity switch
-        {
-            "Event" => 14d,
-            "Rare" => 12d,
-            "Uncommon" => 8d,
-            "Common" => 5d,
-            _ => 4d
-        };
-    }
-
-    private static bool MatchesAny(string value, params string[] patterns)
-    {
-        foreach (string pattern in patterns)
-        {
-            if (value.Contains(pattern, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private sealed class SimulatedShopState

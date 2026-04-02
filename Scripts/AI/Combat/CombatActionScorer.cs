@@ -10,6 +10,9 @@ internal sealed class CombatActionScorer
 {
     public CombatActionScore Score(DeterministicCombatContext context, AiLegalActionOption action)
     {
+        AiCharacterCombatTuning tuning = context.CombatConfig.Combat;
+        AiCombatRiskProfile risk = tuning.RiskProfile;
+
         if (string.Equals(action.ActionType, AiTeammateActionKind.EndTurn.ToString(), StringComparison.Ordinal))
         {
             return new CombatActionScore
@@ -47,13 +50,13 @@ internal sealed class CombatActionScorer
         int selfBuffScore = ScoreSelfBuff(context, action, card);
         int resourceSetupScore = ScoreResourceSetup(context, action, card);
         int killPotentialScore = ScoreKillPotential(context, action, card);
-        int totalScore = immediateDamageScore +
-                         immediateDefenseScore +
+        int totalScore = risk.ApplyAttackWeight(immediateDamageScore) +
+                         risk.ApplyDefenseWeight(immediateDefenseScore) +
                          enemyDebuffScore +
                          selfBuffScore +
                          resourceSetupScore +
                          killPotentialScore +
-                         ScoreEnergyEfficiency(action);
+                         ScoreEnergyEfficiency(context, action);
 
         CombatActionCategory category = Classify(card, immediateDamageScore, immediateDefenseScore, selfBuffScore, resourceSetupScore);
         Log.Debug(
@@ -110,37 +113,41 @@ internal sealed class CombatActionScorer
 
     private static int ScoreImmediateDamage(DeterministicCombatContext context, AiLegalActionOption action, ResolvedCardView card)
     {
+        AiCombatCoreWeights core = context.CombatConfig.Combat.CoreWeights;
+        AiCombatStatusWeights status = context.CombatConfig.Combat.StatusWeights;
         int damage = card.GetEstimatedDamage();
         if (damage <= 0)
         {
             return 0;
         }
 
-        int score = damage * 5;
+        int score = damage * core.DirectDamageValuePerPoint;
         int uncoveredDamage = Math.Max(0, context.IncomingDamage - context.CurrentBlock);
         if (uncoveredDamage > 0 && HasPlayableBlockAction(context))
         {
-            score -= 18;
+            score -= core.AttackWhileDefenseNeededPenalty;
         }
 
         if (!string.IsNullOrEmpty(action.TargetId) &&
             context.EnemiesById.TryGetValue(action.TargetId, out DeterministicEnemyState? enemy))
         {
             int effectiveHp = enemy.CurrentHp + enemy.Block;
-            score += Math.Max(0, 24 - effectiveHp);
+            score += Math.Max(0, core.TargetLowHealthBiasThreshold - effectiveHp) * core.TargetLowHealthBiasValuePerPoint;
             if (enemy.IsAttacking)
             {
-                score += 8;
+                score += core.AttackingTargetBonus;
             }
         }
 
-        score += GetActorPowerAmount(context, "STRENGTH") * Math.Max(1, GetDamageHits(card));
-        score += card.GetSelfTemporaryStrengthAmount() * 8;
+        score += GetActorPowerAmount(context, "STRENGTH") * Math.Max(1, GetDamageHits(card)) * status.StrengthPerHitValue;
+        score += card.GetSelfTemporaryStrengthAmount() * status.SelfTemporaryStrengthValue;
         return score;
     }
 
     private static int ScoreImmediateDefense(DeterministicCombatContext context, AiLegalActionOption action, ResolvedCardView card)
     {
+        AiCombatStatusWeights status = context.CombatConfig.Combat.StatusWeights;
+        AiCombatRiskProfile risk = context.CombatConfig.Combat.RiskProfile;
         int uncoveredDamage = Math.Max(0, context.IncomingDamage - context.CurrentBlock);
         int block = card.GetEstimatedBlock();
         int weakAmount = card.GetEnemyWeakAmount();
@@ -152,34 +159,38 @@ internal sealed class CombatActionScorer
         int score = 0;
         if (block > 0)
         {
-            score += blockedDamage * 10;
-            score += Math.Max(0, block - uncoveredDamage) * 2;
+            score += blockedDamage * risk.BlockedDamageValuePerPoint;
+            score += Math.Max(0, block - uncoveredDamage) * risk.ExcessBlockValuePerPoint;
             if (uncoveredDamage > 0 && block >= uncoveredDamage)
             {
-                score += 50;
+                score += risk.FullBlockCoverageBonus;
             }
         }
 
         if (weakPrevention > 0)
         {
-            score += weakPrevention * 12;
+            score += weakPrevention * status.WeakImmediateDefenseValue;
         }
 
         if (temporaryDexterity > 0)
         {
-            int nearTermBlockValue = HasAffordableBlockFollowUp(context, action) ? 18 : (uncoveredDamage > 0 ? 12 : 6);
+            int nearTermBlockValue = HasAffordableBlockFollowUp(context, action)
+                ? status.TemporaryDexterityWithFollowUpBlockValue
+                : (uncoveredDamage > 0 ? status.TemporaryDexterityThreatenedBlockValue : status.TemporaryDexteritySafeBlockValue);
             score += temporaryDexterity * nearTermBlockValue;
         }
 
         if (dexterity > 0)
         {
-            int futureBlockValue = HasPlayableBlockAction(context) ? 10 : 4;
+            int futureBlockValue = HasPlayableBlockAction(context)
+                ? status.PersistentDexterityWithBlockValue
+                : status.PersistentDexterityWithoutBlockValue;
             score += dexterity * futureBlockValue;
         }
 
         if (context.CurrentHp <= Math.Max(12, context.IncomingDamage))
         {
-            score += 35;
+            score += risk.LowHealthEmergencyDefenseBonus;
         }
 
         return score;
@@ -187,6 +198,7 @@ internal sealed class CombatActionScorer
 
     private static int ScoreEnemyDebuff(DeterministicCombatContext context, AiLegalActionOption action, ResolvedCardView card)
     {
+        AiCombatStatusWeights status = context.CombatConfig.Combat.StatusWeights;
         int score = 0;
         int vulnerable = card.GetEnemyVulnerableAmount();
         int weak = card.GetEnemyWeakAmount();
@@ -194,12 +206,12 @@ internal sealed class CombatActionScorer
         if (vulnerable > 0)
         {
             int followUpAttacks = CountAffordableAttackActions(context, action);
-            score += vulnerable * (followUpAttacks > 0 ? 16 : 6);
+            score += vulnerable * (followUpAttacks > 0 ? status.VulnerableWithFollowUpValue : status.VulnerableWithoutFollowUpValue);
         }
 
         if (weak > 0)
         {
-            score += EstimateWeakPrevention(context, action, weak) * 5;
+            score += EstimateWeakPrevention(context, action, weak) * status.WeakDebuffValue;
         }
 
         return score;
@@ -207,6 +219,7 @@ internal sealed class CombatActionScorer
 
     private static int ScoreSelfBuff(DeterministicCombatContext context, AiLegalActionOption action, ResolvedCardView card)
     {
+        AiCombatStatusWeights status = context.CombatConfig.Combat.StatusWeights;
         int temporaryStrength = card.GetSelfTemporaryStrengthAmount();
         int totalStrength = card.GetSelfStrengthAmount();
         int persistentStrength = Math.Max(0, totalStrength - temporaryStrength);
@@ -217,22 +230,30 @@ internal sealed class CombatActionScorer
         int score = 0;
         if (temporaryStrength > 0)
         {
-            score += temporaryStrength * Math.Max(6, CountAffordableAttackActions(context, action) * 8);
+            score += temporaryStrength * Math.Max(
+                status.TemporaryStrengthMinimumValue,
+                CountAffordableAttackActions(context, action) * status.TemporaryStrengthPerAffordableAttackValue);
         }
 
         if (persistentStrength > 0)
         {
-            score += persistentStrength * Math.Max(4, CountAffordableAttackActions(context, action) * 5);
+            score += persistentStrength * Math.Max(
+                status.PersistentStrengthMinimumValue,
+                CountAffordableAttackActions(context, action) * status.PersistentStrengthPerAffordableAttackValue);
         }
 
         if (temporaryDexterity > 0)
         {
-            score += temporaryDexterity * Math.Max(8, CountAffordableBlockActions(context, action) * 10);
+            score += temporaryDexterity * Math.Max(
+                status.TemporaryDexterityMinimumValue,
+                CountAffordableBlockActions(context, action) * status.TemporaryDexterityPerAffordableBlockValue);
         }
 
         if (persistentDexterity > 0)
         {
-            score += persistentDexterity * Math.Max(4, CountAffordableBlockActions(context, action) * 6);
+            score += persistentDexterity * Math.Max(
+                status.PersistentDexterityMinimumValue,
+                CountAffordableBlockActions(context, action) * status.PersistentDexterityPerAffordableBlockValue);
         }
 
         return score;
@@ -240,6 +261,7 @@ internal sealed class CombatActionScorer
 
     private static int ScoreResourceSetup(DeterministicCombatContext context, AiLegalActionOption action, ResolvedCardView card)
     {
+        AiCombatResourceWeights resource = context.CombatConfig.Combat.ResourceWeights;
         int cardsDrawn = card.GetCardsDrawn();
         int energyGain = card.GetEnergyGain();
         int score = 0;
@@ -247,12 +269,14 @@ internal sealed class CombatActionScorer
         if (cardsDrawn > 0)
         {
             bool hasSpendableFollowUp = CountAffordablePlayableActions(context, action, extraEnergy: energyGain) > 0;
-            score += hasSpendableFollowUp ? cardsDrawn * 10 : -cardsDrawn * 8;
+            score += hasSpendableFollowUp
+                ? cardsDrawn * resource.DrawValueWhenPlayable
+                : -cardsDrawn * resource.DrawPenaltyWhenNotPlayable;
         }
 
         if (energyGain > 0)
         {
-            score += energyGain * 18;
+            score += energyGain * resource.EnergyGainValue;
         }
 
         return score;
@@ -260,6 +284,7 @@ internal sealed class CombatActionScorer
 
     private static int ScoreKillPotential(DeterministicCombatContext context, AiLegalActionOption action, ResolvedCardView card)
     {
+        AiCombatRiskProfile risk = context.CombatConfig.Combat.RiskProfile;
         if (string.IsNullOrEmpty(action.TargetId) ||
             !context.EnemiesById.TryGetValue(action.TargetId, out DeterministicEnemyState? enemy))
         {
@@ -270,7 +295,7 @@ internal sealed class CombatActionScorer
         int effectiveEnemyHp = enemy.CurrentHp + enemy.Block;
         if (estimatedDamage >= effectiveEnemyHp)
         {
-            return 55 + enemy.IncomingDamage * 8;
+            return risk.LethalPriorityBonus + enemy.IncomingDamage * risk.LethalIncomingDamageValue;
         }
 
         return 0;
@@ -278,41 +303,43 @@ internal sealed class CombatActionScorer
 
     private static int ScoreUtility(DeterministicCombatContext context, AiLegalActionOption action)
     {
+        AiCombatCoreWeights core = context.CombatConfig.Combat.CoreWeights;
         int uncoveredDamage = Math.Max(0, context.IncomingDamage - context.CurrentBlock);
-        int score = uncoveredDamage > 0 ? 10 : 18;
-        score += ScoreEnergyEfficiency(action);
+        int score = uncoveredDamage > 0 ? core.UtilityValueWhenThreatened : core.UtilityValueWhenSafe;
+        score += ScoreEnergyEfficiency(context, action);
         return score;
     }
 
     private static int ScorePotion(DeterministicCombatContext context, AiLegalActionOption action)
     {
+        AiPotionCombatUseWeights potionUse = context.CombatConfig.Potions.CombatUse;
         bool isOffensivePotion = IsOffensivePotion(action);
         bool isDefensivePotion = IsDefensivePotion(action);
         bool graveDanger = IsGraveDanger(context);
         bool canAmplifyAttacks = isOffensivePotion && CountNonPotionAttackActions(context) > 0;
         bool isHighValueTarget = IsHighValuePotionTarget(context, action);
 
-        int score = context.IsEliteOrBossCombat ? 18 : -160;
+        int score = context.IsEliteOrBossCombat ? potionUse.EliteBossBaseScore : potionUse.NormalFightBaseScore;
 
         if (context.IsEliteOrBossCombat)
         {
-            score += 12;
+            score += potionUse.EliteBossBonus;
         }
 
         if (graveDanger)
         {
-            score += isDefensivePotion ? 160 : 60;
+            score += isDefensivePotion ? potionUse.GraveDangerDefensiveBonus : potionUse.GraveDangerOffensiveBonus;
         }
 
         if (isOffensivePotion)
         {
             if (context.IsEliteOrBossCombat && canAmplifyAttacks)
             {
-                score += 95;
+                score += potionUse.EliteBossOffensiveFollowUpBonus;
             }
             else if (!context.IsEliteOrBossCombat && canAmplifyAttacks && isHighValueTarget)
             {
-                score += 25;
+                score += potionUse.NormalFightOffensiveFollowUpBonus;
             }
         }
 
@@ -321,12 +348,12 @@ internal sealed class CombatActionScorer
         {
             if (enemy.IsAttacking)
             {
-                score += 8;
+                score += potionUse.AttackingTargetBonus;
             }
 
             if (enemy.CurrentHp + enemy.Block <= 18)
             {
-                score -= 18;
+                score -= potionUse.LowHealthTargetPenalty;
             }
         }
 
@@ -335,22 +362,23 @@ internal sealed class CombatActionScorer
 
     private static int ScoreEndTurn(DeterministicCombatContext context)
     {
+        AiCombatResourceWeights resource = context.CombatConfig.Combat.ResourceWeights;
         if (ShouldPreferEndTurnOverRemainingPotions(context))
         {
-            return 24;
+            return resource.EndTurnWhenSkippingPotionsBonus;
         }
 
-        return context.LegalActions.Count > 1 ? -10000 : 0;
+        return context.LegalActions.Count > 1 ? -resource.EndTurnWhileOtherActionsExistPenalty : 0;
     }
 
-    private static int ScoreEnergyEfficiency(AiLegalActionOption action)
+    private static int ScoreEnergyEfficiency(DeterministicCombatContext context, AiLegalActionOption action)
     {
         if (!action.EnergyCost.HasValue)
         {
             return 0;
         }
 
-        return Math.Max(0, 4 - action.EnergyCost.Value) * 4;
+        return Math.Max(0, 4 - action.EnergyCost.Value) * context.CombatConfig.Combat.ResourceWeights.EnergyEfficiencyValue;
     }
 
     private static int GetActorPowerAmount(DeterministicCombatContext context, string powerId)

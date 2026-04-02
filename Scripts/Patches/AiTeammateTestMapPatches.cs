@@ -20,8 +20,8 @@ internal static class AiTeammateTestMapPatches
                 return;
             }
 
-            __result = new AiTeammateTestActMap();
-            Log.Info("[AITeammate] Replaced generated Act 1 map with AI teammate test map.");
+            __result = new AiTeammateTestActMap(runState.CurrentActIndex);
+            Log.Info($"[AITeammate] Replaced generated Act {runState.CurrentActIndex + 1} map with AI teammate test map.");
         }
     }
 

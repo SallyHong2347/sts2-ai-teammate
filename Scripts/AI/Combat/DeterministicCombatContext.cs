@@ -19,6 +19,8 @@ internal sealed class DeterministicCombatContext
 
     public required HashSet<string> ActorRelicIds { get; init; }
 
+    public required AiCharacterCombatConfig CombatConfig { get; init; }
+
     public required string RoomTypeName { get; init; }
 
     public bool IsEliteCombat { get; init; }

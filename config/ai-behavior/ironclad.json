@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 4,
+  "characterId": "ironclad",
+  "displayName": "Ironclad",
+  "combat": {
+    "coreWeights": {
+      "directDamageValuePerPoint": 6,
+      "lineDamageValuePerPoint": 4,
+      "attackWhileDefenseNeededPenalty": 16,
+      "attackingTargetBonus": 10
+    },
+    "statusWeights": {
+      "strengthPerHitValue": 2,
+      "selfTemporaryStrengthValue": 10,
+      "persistentStrengthPerAffordableAttackValue": 6,
+      "temporaryStrengthPerAffordableAttackValue": 9,
+      "linePersistentStrengthValue": 12,
+      "lineTemporaryStrengthValue": 18
+    },
+    "resourceWeights": {
+      "remainingEnergyPenalty": 16,
+      "remainingAffordableActionsPenalty": 20
+    },
+    "riskProfile": {
+      "attackWeight": 1.12,
+      "aggressiveness": 1.1,
+      "survivalWeight": 0.96,
+      "lethalPriorityBonus": 62,
+      "deadEnemyReward": 50,
+      "damageTakenPenaltyPerPoint": 28
+    }
+  },
+  "cardRewards": {
+    "intrinsicWeights": {
+      "damageValuePerPoint": 0.62,
+      "persistentStrengthValue": 7.0,
+      "temporaryStrengthValue": 5.0
+    },
+    "synergyWeights": {
+      "attackScalingSynergyPerAttack": 1.0,
+      "damageNeedScale": 2.7,
+      "energyNeedValue": 7.0
+    },
+    "disciplineWeights": {
+      "rewardSkipThreshold": 11.0,
+      "duplicatePenaltyPerCopy": 3.5
+    }
+  },
+  "potions": {
+    "combatUse": {
+      "eliteBossOffensiveFollowUpBonus": 110,
+      "normalFightOffensiveFollowUpBonus": 32,
+      "graveDangerOffensiveBonus": 70
+    },
+    "acquisition": {
+      "offensiveCoverageLowNeedBonus": 8.0,
+      "offensiveCoverageCoveredBonus": 4.0,
+      "defensiveCoverageCoveredBonus": 2.0
+    },
+    "rewardHandling": {
+      "replacementThreshold": 0.0
+    }
+  },
+  "shop": {
+    "offerPriorities": {
+      "cardPurchaseBias": 1.5,
+      "relicPurchaseBias": 2.0,
+      "potionPurchaseBias": -1.0,
+      "removalServiceBias": 2.0,
+      "goldReserveValuePerGold": -0.02
+    },
+    "relicWeights": {
+      "specialRelicBonusMultiplier": 1.05
+    },
+    "removalWeights": {
+      "burdenMultiplier": 1.1,
+      "basicCardBonusPerCard": 1.8,
+      "costDivisor": 9.0
+    }
+  },
+  "events": {
+    "outcomeWeights": {
+      "relicRewardMultiplier": 1.1,
+      "removalRewardMultiplier": 1.15,
+      "upgradeRewardMultiplier": 1.1,
+      "transformRewardMultiplier": 0.95,
+      "healValuePerPoint": 1.4,
+      "goldValueDivisor": 13.0
+    },
+    "riskProfile": {
+      "hpPenaltyLowPerPoint": 3.5,
+      "hpPenaltyMidPerPoint": 2.6,
+      "hpPenaltyHealthyPerPoint": 1.8,
+      "cursePenaltyMultiplier": 0.9,
+      "randomRewardDiscount": 5.0,
+      "randomGenericDiscount": 9.0,
+      "startsCombatPenalty": 6.0
+    }
+  }
+}

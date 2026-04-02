@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 4,
+  "characterId": "regent",
+  "displayName": "Regent",
+  "combat": {
+    "coreWeights": {
+      "leftoverBlockValuePerPoint": 5
+    },
+    "statusWeights": {
+      "persistentDexterityWithBlockValue": 12,
+      "linePersistentDexterityValue": 10,
+      "lineTemporaryDexterityThreatenedValue": 20
+    },
+    "resourceWeights": {
+      "remainingEnergyPenalty": 20,
+      "remainingAffordableActionsPenalty": 26
+    },
+    "riskProfile": {
+      "survivalWeight": 1.12,
+      "defenseWeight": 1.12,
+      "attackWeight": 0.94,
+      "aggressiveness": 0.95,
+      "fullBlockCoverageBonus": 58,
+      "lowHealthEmergencyDefenseBonus": 42,
+      "damageTakenPenaltyPerPoint": 34,
+      "perfectDefenseBonus": 68
+    }
+  },
+  "cardRewards": {
+    "intrinsicWeights": {
+      "blockValuePerPoint": 0.52,
+      "persistentDexterityValue": 7.0
+    },
+    "synergyWeights": {
+      "blockNeedScale": 2.7,
+      "dexterityNeedValue": 5.0,
+      "highAscensionBlockBonus": 1.5
+    },
+    "disciplineWeights": {
+      "rewardSkipThreshold": 13.5,
+      "duplicatePenaltyPerCopy": 4.5
+    }
+  },
+  "potions": {
+    "combatUse": {
+      "graveDangerDefensiveBonus": 190,
+      "normalFightOffensiveFollowUpBonus": 16
+    },
+    "acquisition": {
+      "defensiveCoverageLowNeedBonus": 8.0,
+      "highLeverageEmergencyBonus": 10.0,
+      "offensiveCoverageCoveredBonus": 2.0
+    },
+    "rewardHandling": {
+      "replacementThreshold": 0.5
+    }
+  },
+  "shop": {
+    "offerPriorities": {
+      "cardPurchaseBias": -1.0,
+      "relicPurchaseBias": 0.5,
+      "potionPurchaseBias": 0.5,
+      "removalServiceBias": 3.0,
+      "goldReserveValuePerGold": 0.1
+    },
+    "removalWeights": {
+      "burdenMultiplier": 1.2,
+      "mediumDeckBonus": 5.0,
+      "largeDeckBonus": 8.0,
+      "basicCardBonusPerCard": 1.9
+    }
+  },
+  "events": {
+    "outcomeWeights": {
+      "relicRewardMultiplier": 0.95,
+      "removalRewardMultiplier": 1.25,
+      "upgradeRewardMultiplier": 1.15,
+      "transformRewardMultiplier": 0.9,
+      "maxHpGainValuePerPoint": 4.0,
+      "healValuePerPoint": 2.1
+    },
+    "riskProfile": {
+      "hpPenaltyCriticalPerPoint": 5.4,
+      "hpPenaltyLowPerPoint": 4.4,
+      "hpPenaltyMidPerPoint": 3.4,
+      "hpPenaltyHealthyPerPoint": 2.4,
+      "cursePenaltyMultiplier": 1.1,
+      "randomRewardDiscount": 7.0,
+      "randomGenericDiscount": 12.0,
+      "startsCombatPenalty": 10.0
+    }
+  }
+}

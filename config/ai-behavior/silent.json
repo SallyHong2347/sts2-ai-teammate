@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 4,
+  "characterId": "silent",
+  "displayName": "Silent",
+  "combat": {
+    "statusWeights": {
+      "vulnerableWithFollowUpValue": 18,
+      "vulnerableWithoutFollowUpValue": 8,
+      "weakImmediateDefenseValue": 14,
+      "weakDebuffValue": 7,
+      "temporaryDexterityWithFollowUpBlockValue": 20,
+      "persistentDexterityWithBlockValue": 12
+    },
+    "resourceWeights": {
+      "drawValueWhenPlayable": 12,
+      "drawPenaltyWhenNotPlayable": 7,
+      "setupDrawValueWhenPlayable": 12,
+      "lineCardsDrawnValueWhenUsable": 5
+    },
+    "riskProfile": {
+      "survivalWeight": 1.08,
+      "defenseWeight": 1.06,
+      "attackWeight": 0.98,
+      "aggressiveness": 0.98,
+      "blockedDamageValuePerPoint": 11,
+      "damageTakenPenaltyPerPoint": 32,
+      "weakPreventionValuePerPoint": 12
+    }
+  },
+  "cardRewards": {
+    "intrinsicWeights": {
+      "drawValue": 9.5,
+      "weakValue": 6.5,
+      "retainBonus": 3.0
+    },
+    "synergyWeights": {
+      "drawNeedValue": 7.5,
+      "retainWithHighCostBonus": 4.0,
+      "exhaustSynergyBonus": 3.0,
+      "weakNeedValue": 3.0
+    },
+    "disciplineWeights": {
+      "duplicatePenaltyPerCopy": 4.5,
+      "rewardSkipThreshold": 13.0
+    }
+  },
+  "potions": {
+    "combatUse": {
+      "graveDangerDefensiveBonus": 180,
+      "normalFightOffensiveFollowUpBonus": 18
+    },
+    "acquisition": {
+      "defensiveCoverageLowNeedBonus": 8.0,
+      "tempoCoverageLowNeedBonus": 8.0,
+      "highLeverageEmergencyBonus": 10.0
+    },
+    "rewardHandling": {
+      "replacementThreshold": 0.5
+    }
+  },
+  "shop": {
+    "offerPriorities": {
+      "cardPurchaseBias": -0.5,
+      "relicPurchaseBias": 0.5,
+      "potionPurchaseBias": 1.5,
+      "removalServiceBias": 3.0,
+      "goldReserveValuePerGold": 0.08
+    },
+    "removalWeights": {
+      "burdenMultiplier": 1.15,
+      "mediumDeckBonus": 5.0,
+      "largeDeckBonus": 8.0,
+      "basicCardBonusPerCard": 1.8
+    }
+  },
+  "events": {
+    "outcomeWeights": {
+      "potionRewardMultiplier": 1.1,
+      "removalRewardMultiplier": 1.2,
+      "upgradeRewardMultiplier": 1.05,
+      "transformRewardMultiplier": 0.95,
+      "healValuePerPoint": 2.0
+    },
+    "riskProfile": {
+      "hpPenaltyCriticalPerPoint": 5.3,
+      "hpPenaltyLowPerPoint": 4.3,
+      "hpPenaltyMidPerPoint": 3.2,
+      "hpPenaltyHealthyPerPoint": 2.2,
+      "cursePenaltyMultiplier": 1.15,
+      "randomRewardDiscount": 7.0,
+      "randomGenericDiscount": 12.0,
+      "startsCombatPenalty": 10.0
+    }
+  }
+}

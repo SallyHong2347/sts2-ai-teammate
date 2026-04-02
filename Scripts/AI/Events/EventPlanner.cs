@@ -11,9 +11,10 @@ internal sealed class EventPlanner
 
     public EventPlannerResult Evaluate(EventVisitState snapshot)
     {
+        AiEventTuning tuning = AiCharacterCombatConfigLoader.LoadForPlayer(snapshot.Player).Events;
         IEventSpecialHandler? handler = _handlerRegistry.Resolve(snapshot);
         List<EventOptionEvaluation> evaluations = snapshot.Options
-            .Select(option => EvaluateOption(snapshot, option, handler))
+            .Select(option => EvaluateOption(snapshot, option, handler, tuning))
             .OrderByDescending(static evaluation => evaluation.TotalScore)
             .ThenBy(evaluation => evaluation.Title, StringComparer.Ordinal)
             .ToList();
@@ -44,7 +45,7 @@ internal sealed class EventPlanner
         };
     }
 
-    private EventOptionEvaluation EvaluateOption(EventVisitState snapshot, EventOptionDescriptor option, IEventSpecialHandler? handler)
+    private EventOptionEvaluation EvaluateOption(EventVisitState snapshot, EventOptionDescriptor option, IEventSpecialHandler? handler, AiEventTuning tuning)
     {
         if (option.IsLocked)
         {
@@ -80,7 +81,7 @@ internal sealed class EventPlanner
         foreach (string relicId in normalized.Outcome.RelicIds)
         {
             string? rarity = snapshot.RuntimeEvent.CurrentOptions[normalized.OptionIndex].Relic?.Rarity.ToString();
-            score += _valuationHelpers.EvaluateRelic(relicId, rarity, snapshot, reasons);
+            score += _valuationHelpers.EvaluateRelic(relicId, rarity, snapshot, reasons, tuning);
         }
 
         if (normalized.Outcome.PotionRewardCount > 0)
@@ -90,17 +91,18 @@ internal sealed class EventPlanner
                 null,
                 normalized.Outcome.PotionRewardCount,
                 snapshot,
-                reasons);
+                reasons,
+                tuning);
         }
 
         if (normalized.Outcome.FixedCardCount > 0)
         {
-            score += _valuationHelpers.EvaluateFixedCardGain(normalized.Outcome.FixedCardIds, snapshot, reasons);
+            score += _valuationHelpers.EvaluateFixedCardGain(normalized.Outcome.FixedCardIds, snapshot, reasons, tuning);
         }
 
         if (normalized.Outcome.CardRewardCount > 0)
         {
-            double rewardScore = normalized.Outcome.CardRewardCount * 12d;
+            double rewardScore = normalized.Outcome.CardRewardCount * tuning.OutcomeWeights.CardRewardBaselinePerReward * tuning.OutcomeWeights.CardRewardMultiplier;
             score += rewardScore;
             reasons.Add($"cardRewardBaseline={rewardScore:F1}");
         }
@@ -110,7 +112,7 @@ internal sealed class EventPlanner
             EventRemovalCandidate? candidate = _valuationHelpers.SelectBestRemovalCandidate(snapshot);
             if (candidate != null)
             {
-                double removalScore = candidate.BurdenScore * normalized.Outcome.RemoveCount;
+                double removalScore = candidate.BurdenScore * normalized.Outcome.RemoveCount * tuning.OutcomeWeights.RemovalRewardMultiplier;
                 score += removalScore;
                 reasons.Add($"removeTarget={candidate.CardId} removalScore={removalScore:F1}");
             }
@@ -122,51 +124,51 @@ internal sealed class EventPlanner
 
         if (normalized.Outcome.UpgradeCount > 0)
         {
-            score += _valuationHelpers.EvaluateBestUpgradeTarget(snapshot, normalized.Outcome.UpgradeCount, reasons);
+            score += _valuationHelpers.EvaluateBestUpgradeTarget(snapshot, normalized.Outcome.UpgradeCount, reasons, tuning);
         }
 
         if (normalized.Outcome.TransformCount > 0)
         {
-            score += _valuationHelpers.EvaluateTransform(snapshot, normalized.Outcome.TransformCount, reasons);
+            score += _valuationHelpers.EvaluateTransform(snapshot, normalized.Outcome.TransformCount, reasons, tuning);
         }
 
         if (normalized.Outcome.EnchantCount > 0)
         {
-            double enchantScore = 10d * normalized.Outcome.EnchantCount;
+            double enchantScore = tuning.OutcomeWeights.EnchantBaselinePerCard * normalized.Outcome.EnchantCount;
             score += enchantScore;
             reasons.Add($"enchantBaseline={enchantScore:F1}");
         }
 
         if (normalized.Outcome.MaxHpDelta > 0)
         {
-            double maxHpGainScore = normalized.Outcome.MaxHpDelta * 3.5d;
+            double maxHpGainScore = normalized.Outcome.MaxHpDelta * tuning.OutcomeWeights.MaxHpGainValuePerPoint;
             score += maxHpGainScore;
             reasons.Add($"maxHpGain={maxHpGainScore:F1}");
         }
 
         if (normalized.Outcome.HpDelta > 0)
         {
-            double healScore = normalized.Outcome.HpDelta * 1.8d;
+            double healScore = normalized.Outcome.HpDelta * tuning.OutcomeWeights.HealValuePerPoint;
             score += healScore;
             reasons.Add($"healScore={healScore:F1}");
         }
 
-        score += _valuationHelpers.EvaluateGoldDelta(normalized.Outcome.GoldDelta, reasons);
-        score -= _valuationHelpers.EvaluateHpPenalty(snapshot, Math.Max(0, -normalized.Outcome.HpDelta), normalized.WillKillPlayer, reasons);
-        score -= _valuationHelpers.EvaluateMaxHpPenalty(normalized.Outcome.MaxHpDelta, reasons);
-        score -= _valuationHelpers.EvaluateCursePenalty(normalized.Outcome.CurseCardIds, reasons);
-        score -= _valuationHelpers.EvaluateRandomnessDiscount(normalized.Outcome, reasons);
+        score += _valuationHelpers.EvaluateGoldDelta(normalized.Outcome.GoldDelta, reasons, tuning);
+        score -= _valuationHelpers.EvaluateHpPenalty(snapshot, Math.Max(0, -normalized.Outcome.HpDelta), normalized.WillKillPlayer, reasons, tuning);
+        score -= _valuationHelpers.EvaluateMaxHpPenalty(normalized.Outcome.MaxHpDelta, reasons, tuning);
+        score -= _valuationHelpers.EvaluateCursePenalty(normalized.Outcome.CurseCardIds, reasons, tuning);
+        score -= _valuationHelpers.EvaluateRandomnessDiscount(normalized.Outcome, reasons, tuning);
 
         if (normalized.Outcome.StartsCombat)
         {
-            score -= 8d;
-            reasons.Add("combat follow-up uncertainty -8.0");
+            score -= tuning.RiskProfile.StartsCombatPenalty;
+            reasons.Add($"combat follow-up uncertainty -{tuning.RiskProfile.StartsCombatPenalty:F1}");
         }
 
         bool supported = normalized.SupportLevel != EventSupportLevel.Unsupported;
         if (!supported || normalized.Outcome.HasUnknownEffects)
         {
-            score -= _valuationHelpers.UnsupportedOptionPenalty(normalized.Outcome.HasUnknownEffects, reasons);
+            score -= _valuationHelpers.UnsupportedOptionPenalty(normalized.Outcome.HasUnknownEffects, reasons, tuning);
         }
 
         foreach (string unknownReason in normalized.UnknownReasons)

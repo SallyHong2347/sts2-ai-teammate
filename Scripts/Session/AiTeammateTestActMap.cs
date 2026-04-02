@@ -26,11 +26,20 @@ internal sealed class AiTeammateTestActMap : ActMap
 
     public override MapPoint StartingMapPoint { get; }
 
-    public AiTeammateTestActMap()
+    public AiTeammateTestActMap(int actIndex)
     {
         Grid = new MapPoint[GridWidth, GridHeight];
         StartingMapPoint = CreateSpecialPoint(StartColumn, 0, MapPointType.Ancient);
         BossMapPoint = CreateSpecialPoint(SharedRestColumn, GridHeight, MapPointType.Boss);
+
+        if (actIndex > 0)
+        {
+            MapPoint quickRestSite = CreatePathPoint(SharedRestColumn, 1, MapPointType.RestSite);
+            StartingMapPoint.AddChildPoint(quickRestSite);
+            quickRestSite.AddChildPoint(BossMapPoint);
+            startMapPoints.Add(quickRestSite);
+            return;
+        }
 
         MapPoint smallMonster = CreatePathPoint(MonsterColumn, 1, MapPointType.Monster);
         MapPoint elite = CreatePathPoint(EliteColumn, 1, MapPointType.Elite);

@@ -16,13 +16,14 @@ internal sealed class CardChoiceEvaluator
         IEnumerable<CardModel> candidates,
         CardEvaluationContext context)
     {
+        AiCardRewardTuning tuning = AiCharacterCombatConfigLoader.LoadForPlayer(context.Player).CardRewards;
         List<CardEvaluationResult> ranked = candidates
             .Select((card, index) => EvaluateCard(card, index, context))
             .OrderByDescending(static result => result.FinalScore)
             .ThenBy(result => result.Candidate.Name, StringComparer.Ordinal)
             .ToList();
 
-        double skipThreshold = GetSkipThreshold(context);
+        double skipThreshold = GetSkipThreshold(context, tuning);
         bool shouldTake = ranked.Count > 0 && (!context.SkipAllowed || ranked[0].FinalScore >= skipThreshold);
 
         return new CardChoiceDecision
@@ -35,14 +36,15 @@ internal sealed class CardChoiceEvaluator
 
     private CardEvaluationResult EvaluateCard(CardModel cardModel, int index, CardEvaluationContext context)
     {
+        AiCardRewardTuning tuning = AiCharacterCombatConfigLoader.LoadForPlayer(context.Player).CardRewards;
         ResolvedCardView card = _contextFactory.ResolveCandidate(cardModel, index);
         CardFeatureVector features = CardFeatureVector.From(card);
 
-        double intrinsic = ScoreIntrinsic(card, features);
-        double deckFit = ScoreDeckFit(card, features, context);
-        double needs = ScoreDeckNeeds(card, features, context);
-        double redundancy = ScoreRedundancy(card, features, context);
-        double contextAdjustment = ScoreContext(card, features, context);
+        double intrinsic = ScoreIntrinsic(card, features, tuning);
+        double deckFit = ScoreDeckFit(card, features, context, tuning);
+        double needs = ScoreDeckNeeds(card, features, context, tuning);
+        double redundancy = ScoreRedundancy(card, features, context, tuning);
+        double contextAdjustment = ScoreContext(card, features, context, tuning);
         double final = intrinsic + deckFit + needs + contextAdjustment - redundancy;
 
         List<string> reasons = [];
@@ -85,233 +87,241 @@ internal sealed class CardChoiceEvaluator
         };
     }
 
-    private static double ScoreIntrinsic(ResolvedCardView card, CardFeatureVector features)
+    private static double ScoreIntrinsic(ResolvedCardView card, CardFeatureVector features, AiCardRewardTuning tuning)
     {
+        AiCardRewardIntrinsicWeights intrinsic = tuning.IntrinsicWeights;
         double score = 0d;
-        score += features.Damage * 0.55d;
-        score += features.Block * 0.45d;
-        score += features.Draw * 8d;
-        score += features.Energy * 12d;
-        score += features.Vulnerable * 5d;
-        score += features.Weak * 5.5d;
-        score += features.PersistentStrength * 6d;
-        score += features.PersistentDexterity * 6d;
-        score += features.TemporaryStrength * 4d;
-        score += features.TemporaryDexterity * 4d;
-        score += features.RepeatCount * 0.75d;
-        score += GetRarityBonus(card.Rarity);
+        score += features.Damage * intrinsic.DamageValuePerPoint;
+        score += features.Block * intrinsic.BlockValuePerPoint;
+        score += features.Draw * intrinsic.DrawValue;
+        score += features.Energy * intrinsic.EnergyValue;
+        score += features.Vulnerable * intrinsic.VulnerableValue;
+        score += features.Weak * intrinsic.WeakValue;
+        score += features.PersistentStrength * intrinsic.PersistentStrengthValue;
+        score += features.PersistentDexterity * intrinsic.PersistentDexterityValue;
+        score += features.TemporaryStrength * intrinsic.TemporaryStrengthValue;
+        score += features.TemporaryDexterity * intrinsic.TemporaryDexterityValue;
+        score += features.RepeatCount * intrinsic.RepeatValue;
+        score += GetRarityBonus(card.Rarity, intrinsic);
 
         if (card.Type == CardType.Power)
         {
-            score += 2d;
+            score += intrinsic.PowerBonus;
         }
 
         if (card.EffectiveCost == 0)
         {
-            score += 4d;
+            score += intrinsic.ZeroCostBonus;
         }
         else if (card.EffectiveCost > 1)
         {
-            score -= (card.EffectiveCost - 1) * 2.25d;
+            score -= (card.EffectiveCost - 1) * intrinsic.HighCostPenaltyPerExtraEnergy;
         }
 
         if (card.Retain)
         {
-            score += 2d;
+            score += intrinsic.RetainBonus;
         }
 
         if (card.Exhaust)
         {
-            score += score >= 18d ? 1d : -2d;
+            score += score >= 18d ? intrinsic.GoodExhaustBonus : -intrinsic.BadExhaustPenalty;
         }
 
         if (card.Ethereal)
         {
-            score -= 6d;
+            score -= intrinsic.EtherealPenalty;
         }
 
         if (features.TotalKnownValue <= 0 &&
             card.Type is CardType.Attack or CardType.Skill or CardType.Power)
         {
-            score -= 6d;
+            score -= intrinsic.UnknownValuePenalty;
         }
 
         return score;
     }
 
-    private static double ScoreDeckFit(ResolvedCardView card, CardFeatureVector features, CardEvaluationContext context)
+    private static double ScoreDeckFit(ResolvedCardView card, CardFeatureVector features, CardEvaluationContext context, AiCardRewardTuning tuning)
     {
+        AiCardRewardSynergyWeights synergy = tuning.SynergyWeights;
         DeckSummary deck = context.DeckSummary;
         double score = 0d;
 
         if (features.Draw > 0 && (deck.HighCostCards >= 4 || deck.AverageCost >= 1.35d))
         {
-            score += features.Draw * 3.5d;
+            score += features.Draw * synergy.DrawWithHighCurveValue;
         }
 
         if (features.Energy > 0 && (deck.HighCostCards >= 5 || deck.DrawSources >= 2))
         {
-            score += features.Energy * 5d;
+            score += features.Energy * synergy.EnergyWithHeavyCurveValue;
         }
 
         if (features.PersistentStrength > 0 || features.TemporaryStrength > 0 || features.Vulnerable > 0)
         {
-            score += Math.Min(deck.AttackCount, 8) * 0.9d;
+            score += Math.Min(deck.AttackCount, 8) * synergy.AttackScalingSynergyPerAttack;
         }
 
         if (features.PersistentDexterity > 0 || features.TemporaryDexterity > 0)
         {
-            score += Math.Min(deck.BlockSources, 8) * 0.9d;
+            score += Math.Min(deck.BlockSources, 8) * synergy.DefenseScalingSynergyPerBlockSource;
         }
 
         if (card.Type == CardType.Power && deck.DrawSources > 0)
         {
-            score += 3d;
+            score += synergy.PowerWithDrawBonus;
         }
 
         if (card.Retain && deck.HighCostCards > 0)
         {
-            score += 3d;
+            score += synergy.RetainWithHighCostBonus;
         }
 
         if (card.Exhaust && (features.Draw > 0 || features.Energy > 0 || features.TotalKnownValue >= 18))
         {
-            score += 2d;
+            score += synergy.ExhaustSynergyBonus;
         }
 
         return score;
     }
 
-    private static double ScoreDeckNeeds(ResolvedCardView card, CardFeatureVector features, CardEvaluationContext context)
+    private static double ScoreDeckNeeds(ResolvedCardView card, CardFeatureVector features, CardEvaluationContext context, AiCardRewardTuning tuning)
     {
+        AiCardRewardSynergyWeights synergy = tuning.SynergyWeights;
         DeckSummary deck = context.DeckSummary;
         double score = 0d;
 
         if (deck.FrontloadDamageSources < DesiredDamageSources(deck))
         {
-            score += Math.Min(features.Damage / 3d, 12d);
-            score += features.Vulnerable * 2d;
+            score += Math.Min(features.Damage / synergy.DamageNeedScale, synergy.DamageNeedCap);
+            score += features.Vulnerable * synergy.VulnerableNeedValue;
         }
 
         if (deck.BlockSources < DesiredBlockSources(deck))
         {
-            score += Math.Min(features.Block / 3d, 12d);
-            score += features.Weak * 2d;
-            score += features.PersistentDexterity * 4d;
+            score += Math.Min(features.Block / synergy.BlockNeedScale, synergy.BlockNeedCap);
+            score += features.Weak * synergy.WeakNeedValue;
+            score += features.PersistentDexterity * synergy.DexterityNeedValue;
         }
 
         if (deck.DrawSources < DesiredDrawSources(deck))
         {
-            score += features.Draw * 6d;
+            score += features.Draw * synergy.DrawNeedValue;
         }
 
         if (deck.EnergySources < DesiredEnergySources(deck))
         {
-            score += features.Energy * 8d;
+            score += features.Energy * synergy.EnergyNeedValue;
         }
 
         if (deck.ScalingSources < DesiredScalingSources(deck))
         {
-            score += (features.PersistentStrength + features.PersistentDexterity) * 5d;
+            score += (features.PersistentStrength + features.PersistentDexterity) * synergy.ScalingNeedValue;
             if (card.Type == CardType.Power)
             {
-                score += 3d;
+                score += synergy.PowerScalingBonus;
             }
         }
 
         if (deck.CardCount <= 15 && card.EffectiveCost <= 1)
         {
-            score += Math.Min(features.Damage + features.Block, 16) * 0.35d;
+            score += Math.Min(features.Damage + features.Block, synergy.EarlyCheapCardTempoCap) * synergy.EarlyCheapCardTempoScale;
         }
 
         return score;
     }
 
-    private static double ScoreRedundancy(ResolvedCardView card, CardFeatureVector features, CardEvaluationContext context)
+    private static double ScoreRedundancy(ResolvedCardView card, CardFeatureVector features, CardEvaluationContext context, AiCardRewardTuning tuning)
     {
+        AiCardRewardDisciplineWeights discipline = tuning.DisciplineWeights;
         DeckSummary deck = context.DeckSummary;
         int copiesInDeck = context.DeckCards.Count(deckCard =>
             string.Equals(deckCard.CardId, card.CardId, StringComparison.Ordinal));
 
-        double penalty = copiesInDeck * 4d;
+        double penalty = copiesInDeck * discipline.DuplicatePenaltyPerCopy;
 
         if (deck.DrawSources >= DesiredDrawSources(deck) + 1 && features.Draw > 0)
         {
-            penalty += features.Draw * 4d;
+            penalty += features.Draw * discipline.ExcessDrawPenalty;
         }
 
         if (deck.EnergySources >= DesiredEnergySources(deck) + 1 && features.Energy > 0)
         {
-            penalty += features.Energy * 5d;
+            penalty += features.Energy * discipline.ExcessEnergyPenalty;
         }
 
         if (deck.FrontloadDamageSources >= DesiredDamageSources(deck) + 2 && features.Damage > 0)
         {
-            penalty += Math.Min(features.Damage / 5d, 8d);
+            penalty += Math.Min(features.Damage / discipline.ExcessDamagePenaltyScale, discipline.ExcessDamagePenaltyCap);
         }
 
         if (deck.BlockSources >= DesiredBlockSources(deck) + 2 && features.Block > 0)
         {
-            penalty += Math.Min(features.Block / 5d, 8d);
+            penalty += Math.Min(features.Block / discipline.ExcessBlockPenaltyScale, discipline.ExcessBlockPenaltyCap);
         }
 
         if (deck.ScalingSources >= DesiredScalingSources(deck) + 2 &&
             (features.PersistentStrength > 0 || features.PersistentDexterity > 0 || card.Type == CardType.Power))
         {
-            penalty += 6d;
+            penalty += discipline.ExcessScalingPenalty;
         }
 
         if (deck.PowerCount >= 5 && card.Type == CardType.Power)
         {
-            penalty += 4d;
+            penalty += discipline.ExcessPowerPenalty;
         }
 
         if (card.Ethereal && card.EffectiveCost >= 2)
         {
-            penalty += 4d;
+            penalty += discipline.EtherealHighCostPenalty;
         }
 
         return penalty;
     }
 
-    private static double ScoreContext(ResolvedCardView card, CardFeatureVector features, CardEvaluationContext context)
+    private static double ScoreContext(ResolvedCardView card, CardFeatureVector features, CardEvaluationContext context, AiCardRewardTuning tuning)
     {
+        AiCardRewardDisciplineWeights discipline = tuning.DisciplineWeights;
+        AiCardRewardSynergyWeights synergy = tuning.SynergyWeights;
         double score = context.ChoiceSource switch
         {
-            CardChoiceSource.Reward => 2d,
-            CardChoiceSource.ChooseScreen => 1d,
-            CardChoiceSource.Event => 0d,
-            CardChoiceSource.Shop => ScoreShopContext(context),
+            CardChoiceSource.Reward => discipline.RewardContextBonus,
+            CardChoiceSource.ChooseScreen => discipline.ChooseScreenContextBonus,
+            CardChoiceSource.Event => discipline.EventContextBonus,
+            CardChoiceSource.Shop => ScoreShopContext(context, tuning),
             _ => 0d
         };
 
         if (context.CurrentActIndex == 0 && context.TotalFloor <= 10)
         {
-            score += Math.Min(features.Damage + features.Block, 18d) * 0.15d;
+            score += Math.Min(features.Damage + features.Block, synergy.EarlyActTempoCap) * synergy.EarlyActTempoScale;
         }
 
         if (context.AscensionLevel >= 10 && features.Block > 0)
         {
-            score += 1d;
+            score += synergy.HighAscensionBlockBonus;
         }
 
         return score;
     }
 
-    private static double ScoreShopContext(CardEvaluationContext context)
+    private static double ScoreShopContext(CardEvaluationContext context, AiCardRewardTuning tuning)
     {
+        AiCardRewardDisciplineWeights discipline = tuning.DisciplineWeights;
         if (!context.CandidateGoldCost.HasValue)
         {
-            return -6d;
+            return -discipline.ShopMissingCostPenalty;
         }
 
         double gold = Math.Max(context.Gold, 1);
         double cost = context.CandidateGoldCost.Value;
-        return -(cost / Math.Max(gold, 50d)) * 8d;
+        return -(cost / Math.Max(gold, 50d)) * discipline.ShopCostRatioPenaltyScale;
     }
 
-    private static double GetSkipThreshold(CardEvaluationContext context)
+    private static double GetSkipThreshold(CardEvaluationContext context, AiCardRewardTuning tuning)
     {
+        AiCardRewardDisciplineWeights discipline = tuning.DisciplineWeights;
         if (!context.SkipAllowed || context.ChoiceSource == CardChoiceSource.ForcedChoice)
         {
             return double.NegativeInfinity;
@@ -319,11 +329,11 @@ internal sealed class CardChoiceEvaluator
 
         return context.ChoiceSource switch
         {
-            CardChoiceSource.Reward => 12d,
-            CardChoiceSource.ChooseScreen => 12d,
-            CardChoiceSource.Event => 14d,
-            CardChoiceSource.Shop => 22d + (context.CandidateGoldCost ?? 0) * 0.10d,
-            _ => 14d
+            CardChoiceSource.Reward => discipline.RewardSkipThreshold,
+            CardChoiceSource.ChooseScreen => discipline.ChooseScreenSkipThreshold,
+            CardChoiceSource.Event => discipline.EventSkipThreshold,
+            CardChoiceSource.Shop => discipline.ShopSkipThresholdBase + (context.CandidateGoldCost ?? 0) * discipline.ShopSkipThresholdCostFactor,
+            _ => discipline.EventSkipThreshold
         };
     }
 
@@ -352,19 +362,19 @@ internal sealed class CardChoiceEvaluator
         return deck.CardCount < 15 ? 1 : 2;
     }
 
-    private static double GetRarityBonus(string rarity)
+    private static double GetRarityBonus(string rarity, AiCardRewardIntrinsicWeights intrinsic)
     {
         return rarity switch
         {
-            "Rare" => 6d,
-            "Uncommon" => 3d,
+            "Rare" => intrinsic.RareBonus,
+            "Uncommon" => intrinsic.UncommonBonus,
             "Common" => 0d,
-            "Basic" => -3d,
-            "Curse" => -35d,
-            "Status" => -25d,
-            "Quest" => -10d,
-            "Event" => 1d,
-            "Ancient" => 8d,
+            "Basic" => intrinsic.BasicBonus,
+            "Curse" => intrinsic.CursePenalty,
+            "Status" => intrinsic.StatusPenalty,
+            "Quest" => intrinsic.QuestPenalty,
+            "Event" => intrinsic.EventBonus,
+            "Ancient" => intrinsic.AncientBonus,
             _ => 0d
         };
     }

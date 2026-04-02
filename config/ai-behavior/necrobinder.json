@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 4,
+  "characterId": "necrobinder",
+  "displayName": "Necrobinder",
+  "combat": {
+    "coreWeights": {
+      "directDamageValuePerPoint": 6,
+      "lineDamageValuePerPoint": 4
+    },
+    "statusWeights": {
+      "vulnerableWithFollowUpValue": 18,
+      "persistentStrengthPerAffordableAttackValue": 6,
+      "temporaryStrengthPerAffordableAttackValue": 9,
+      "linePersistentStrengthValue": 12,
+      "lineTemporaryStrengthValue": 18
+    },
+    "resourceWeights": {
+      "drawValueWhenPlayable": 11,
+      "energyGainValue": 20,
+      "setupActionBonus": 11,
+      "lineEnergyGeneratedValue": 16,
+      "remainingAffordableActionsPenalty": 20
+    },
+    "riskProfile": {
+      "survivalWeight": 0.94,
+      "defenseWeight": 0.96,
+      "attackWeight": 1.1,
+      "aggressiveness": 1.12,
+      "lethalPriorityBonus": 65,
+      "deadEnemyReward": 52,
+      "damageTakenPenaltyPerPoint": 27
+    }
+  },
+  "cardRewards": {
+    "intrinsicWeights": {
+      "damageValuePerPoint": 0.6,
+      "persistentStrengthValue": 7.0,
+      "powerBonus": 2.5
+    },
+    "synergyWeights": {
+      "attackScalingSynergyPerAttack": 1.0,
+      "scalingNeedValue": 6.0,
+      "powerScalingBonus": 4.0
+    },
+    "disciplineWeights": {
+      "rewardSkipThreshold": 11.5,
+      "duplicatePenaltyPerCopy": 3.5
+    }
+  },
+  "potions": {
+    "combatUse": {
+      "eliteBossOffensiveFollowUpBonus": 110,
+      "normalFightOffensiveFollowUpBonus": 30,
+      "graveDangerOffensiveBonus": 72
+    },
+    "acquisition": {
+      "offensiveCoverageLowNeedBonus": 8.0,
+      "tempoCoverageLowNeedBonus": 8.0
+    },
+    "rewardHandling": {
+      "replacementThreshold": 0.0
+    }
+  },
+  "shop": {
+    "offerPriorities": {
+      "cardPurchaseBias": 1.5,
+      "relicPurchaseBias": 1.5,
+      "potionPurchaseBias": 1.0,
+      "removalServiceBias": -0.5,
+      "goldReserveValuePerGold": -0.03
+    },
+    "relicWeights": {
+      "specialRelicBonusMultiplier": 1.1
+    }
+  },
+  "events": {
+    "outcomeWeights": {
+      "relicRewardMultiplier": 1.1,
+      "potionRewardMultiplier": 1.05,
+      "cardRewardMultiplier": 1.05,
+      "transformRewardMultiplier": 1.15,
+      "removalRewardMultiplier": 0.95
+    },
+    "riskProfile": {
+      "hpPenaltyCriticalPerPoint": 4.2,
+      "hpPenaltyLowPerPoint": 3.3,
+      "hpPenaltyMidPerPoint": 2.4,
+      "hpPenaltyHealthyPerPoint": 1.6,
+      "cursePenaltyMultiplier": 0.85,
+      "randomRewardDiscount": 4.5,
+      "randomGenericDiscount": 8.0,
+      "startsCombatPenalty": 6.5
+    }
+  }
+}
