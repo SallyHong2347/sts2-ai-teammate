@@ -62,7 +62,7 @@ See the player-facing limitations page here:
 
 ## Source / GitHub
 
-- GitHub: `<repo link here>`
+- GitHub: `https://github.com/SallyHong2347/sts2-ai-teammate.git`
 
 ## Support and maintenance
 
