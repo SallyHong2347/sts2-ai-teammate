@@ -5,7 +5,8 @@
     <LangVersion>12.0</LangVersion>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Sts2Dir>C:\Program Files (x86)\Steam\steamapps\common\Slay the Spire 2 - ModDev</Sts2Dir>
+    <Sts2Dir Condition="'$(Sts2Dir)' == '' and '$(STS2_DIR)' != ''">$(STS2_DIR)</Sts2Dir>
+    <Sts2Dir Condition="'$(Sts2Dir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Slay the Spire 2 - ModDev</Sts2Dir>
     <Sts2DataDir>$(Sts2Dir)\data_sts2_windows_x86_64</Sts2DataDir>
   </PropertyGroup>
 
@@ -27,6 +28,7 @@
 
   <Target Name="Copy Mod" AfterTargets="PostBuildEvent">
     <Message Text="Copying mod to Slay the Spire 2 mods folder..." Importance="high" />
+    <Error Condition="'$(Sts2Dir)' == ''" Text="Set the Sts2Dir MSBuild property or STS2_DIR environment variable to your Slay the Spire 2 install folder before building this project." />
     <MakeDir Directories="$(Sts2Dir)\mods\" />
     <MakeDir Directories="@(ConfigFiles->'$(Sts2Dir)\mods\$(MSBuildProjectName)\%(RecursiveDir)')" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(Sts2Dir)\mods\$(MSBuildProjectName)\" />
