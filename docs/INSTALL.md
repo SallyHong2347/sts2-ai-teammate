@@ -2,16 +2,40 @@
 
 ## For players
 
+This mod install includes:
+
+- one `.dll`
+- one `.json`
+- a `config\ai-behavior\` folder with the shipped AI behavior files
+
+Place them in this folder:
+
+```text
+xxx\Steam\steamapps\common\Slay the Spire 2\mods\sts2AITeammate\
+```
+
+Example final folder structure:
+
+```text
+xxx\Steam\steamapps\common\Slay the Spire 2\mods\sts2AITeammate\
+    sts2AITeammate.dll
+    sts2AITeammate.json
+    config\
+        ai-behavior\
+            default.json
+            ironclad.json
+            silent.json
+            defect.json
+            regent.json
+            necrobinder.json
+```
+
+Install steps:
+
 1. Install the mod loader and any dependencies required for Slay the Spire 2 mods.
-2. Extract the release archive.
-3. Place the `sts2AITeammate` mod folder in your game's `mods/` directory.
+2. Create the folder `xxx\Steam\steamapps\common\Slay the Spire 2\mods\sts2AITeammate\` if it does not already exist.
+3. Copy the mod `.dll`, `.json`, and `config` folder into that folder.
 4. Launch the game with mods enabled.
-
-The mod ships with per-character behavior config files under:
-
-`mods/sts2AITeammate/config/ai-behavior/`
-
-You do not need to edit these files to use the mod. They are there for users who want to tune AI behavior by hand.
 
 ## How to verify it loaded
 
@@ -19,10 +43,27 @@ You do not need to edit these files to use the mod. They are there for users who
 - Look for the AI Teammate menu/setup entry added by the mod.
 - Start an AI teammate run and confirm AI companions appear in the run setup and act on their own once the run begins.
 
+## Save files
+
+Slay the Spire 2 keeps vanilla and modded saves separately.
+
+If you want to use your existing non-modded save while playing with mods, copy your save files from your normal save location into the modded save folder under:
+
+```text
+C:\Users\[YourUserName]\AppData\Roaming\SlayTheSpire2\steam\[YourSteamID]
+```
+
+Save files you may want to copy include:
+
+- `profile1`
+- `profile2`
+- `profile3`
+
+Copy those files into the corresponding modded save folder before launching your modded run.
+
 ## How to uninstall
 
-- Remove the `sts2AITeammate` folder from your game's `mods/` directory.
-- If you made manual edits to the shipped config files, those edits will be removed with the mod folder unless you backed them up elsewhere.
+- Remove the `sts2AITeammate` folder from your game's `mods\` directory.
 
 ## For local builds
 
