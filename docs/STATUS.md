@@ -2,6 +2,15 @@
 
 This document is for repo readers who want to inspect, tune, or extend the project.
 
+## Version targets
+
+The repository currently maintains separate compatibility branches:
+
+- `beta-326` for the public beta build updated on March 26
+- `default-314` for the public default build updated on March 14
+
+The mod is not trying to support both builds in one runtime path. Branch-specific compatibility is easier to test and maintain.
+
 ## What is implemented
 
 The current public codebase includes:
@@ -31,6 +40,7 @@ These parts are still heuristic or conservative by design:
 - some event handlers are only partial and remain fallback-driven
 - generic event handling prefers caution over ambitious bespoke logic
 - some multiplayer-adjacent screens and room-end flows may still need careful testing after changes
+- version-sensitive multiplayer glue can drift when the game updates, especially around lobby and synchronization APIs
 
 For release safety:
 

@@ -412,11 +412,6 @@ public partial class AiTeammateCharacterSetupScreen
         HandlePlayerChanged(player);
     }
 
-    public void PlayerChanged(LobbyPlayer player, bool isRandomCharacterResolution)
-    {
-        HandlePlayerChanged(player);
-    }
-
     public void AscensionChanged()
     {
         if (_lobby != null)

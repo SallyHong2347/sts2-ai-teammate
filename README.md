@@ -4,6 +4,15 @@ AI Teammate is an experimental Slay the Spire 2 mod that adds AI-controlled team
 
 This repository is the public codebase for the mod. It is intended for players who want to use the release, and for tinkerers who want to inspect, tune, fork, or extend the project.
 
+## Version branches
+
+This project currently maintains separate branches for two public Slay the Spire 2 builds:
+
+- `beta-326` for the public beta build updated on March 26
+- `default-314` for the public default build updated on March 14
+
+The split exists because several multiplayer-facing APIs changed between those builds. See [version branches](docs/VERSION_BRANCHES.md).
+
 ## What the mod currently does
 
 - Adds AI-controlled teammates to a local fake-multiplayer run
@@ -72,7 +81,7 @@ For players:
 For local builds:
 
 - the project reads the game install path from the `Sts2Dir` MSBuild property
-- by default, `sts2AITeammate.csproj` sets `Sts2Dir` to `C:\Program Files (x86)\Steam\steamapps\common\Slay the Spire 2 - ModDev`
+- by default, `sts2AITeammate.csproj` sets `Sts2Dir` to `C:\Program Files (x86)\Steam\steamapps\common\Slay the Spire 2`
 - if your game lives somewhere else, you can either:
   - edit the default `Sts2Dir` value in `sts2AITeammate.csproj`
   - set the `STS2_DIR` environment variable
@@ -82,12 +91,12 @@ For local builds:
 Examples:
 
 ```powershell
-$env:STS2_DIR = "D:\Games\Slay the Spire 2 - ModDev"
+$env:STS2_DIR = "D:\Games\Slay the Spire 2"
 dotnet build
 ```
 
 ```powershell
-dotnet build -p:Sts2Dir="D:\Games\Slay the Spire 2 - ModDev"
+dotnet build -p:Sts2Dir="D:\Games\Slay the Spire 2"
 ```
 
 The project copies the built mod into the game's `mods/` folder after a successful build.

@@ -30,9 +30,9 @@
     <Message Text="Copying mod to Slay the Spire 2 mods folder..." Importance="high" />
     <Error Condition="'$(Sts2Dir)' == ''" Text="Set the Sts2Dir MSBuild property or STS2_DIR environment variable to your Slay the Spire 2 install folder before building this project." />
     <MakeDir Directories="$(Sts2Dir)\mods\" />
-    <MakeDir Directories="@(ConfigFiles->'$(Sts2Dir)\mods\$(MSBuildProjectName)\%(RecursiveDir)')" />
+    <MakeDir Directories="@(ConfigFiles->'$(Sts2Dir)\mods\$(MSBuildProjectName)\config\%(RecursiveDir)')" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(Sts2Dir)\mods\$(MSBuildProjectName)\" />
     <Copy SourceFiles="$(MSBuildProjectName).json" DestinationFolder="$(Sts2Dir)/mods/$(MSBuildProjectName)/" />
-    <Copy SourceFiles="@(ConfigFiles)" DestinationFiles="@(ConfigFiles->'$(Sts2Dir)\mods\$(MSBuildProjectName)\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(ConfigFiles)" DestinationFiles="@(ConfigFiles->'$(Sts2Dir)\mods\$(MSBuildProjectName)\config\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 </Project>
