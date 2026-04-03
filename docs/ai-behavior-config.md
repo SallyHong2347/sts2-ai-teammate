@@ -1,6 +1,6 @@
 # AI Behavior Config
 
-This mod keeps one shared AI implementation and changes personality through per-character JSON files.
+This mod keeps one shared AI implementation and changes personality through per-character config files.
 
 The release config surface now has five main areas:
 
@@ -17,12 +17,12 @@ The release config surface now has five main areas:
 
 Files shipped right now:
 
-- `default.json`
-- `ironclad.json`
-- `silent.json`
-- `defect.json`
-- `regent.json`
-- `necrobinder.json`
+- `default.aiconfig`
+- `ironclad.aiconfig`
+- `silent.aiconfig`
+- `defect.aiconfig`
+- `regent.aiconfig`
+- `necrobinder.aiconfig`
 
 ## Selection and fallback
 
@@ -31,7 +31,7 @@ The mod resolves the current AI teammate character and loads that character file
 Fallback order:
 
 1. character file
-2. `default.json`
+2. `default.aiconfig`
 3. built-in code defaults
 
 If a file is missing, malformed, or only partially filled out, the loader logs a warning and keeps going with fallback values instead of crashing.
@@ -51,7 +51,7 @@ If a file is missing, malformed, or only partially filled out, the loader logs a
 }
 ```
 
-You do not need to fill every field. Missing fields inherit from `default.json`, and anything still missing inherits from built-in defaults.
+You do not need to fill every field. Missing fields inherit from `default.aiconfig`, and anything still missing inherits from built-in defaults.
 
 ## Combat, card rewards, and potions
 
@@ -235,21 +235,21 @@ Still hardcoded:
 
 These stay hardcoded because they are implementation mechanics more than user-facing personality knobs.
 
-## How character files differ from `default.json`
+## How character files differ from `default.aiconfig`
 
-`default.json` stays closest to the old shared baseline.
+`default.aiconfig` stays closest to the old shared baseline.
 
 Character profiles now also differ in shop and event behavior:
 
-- `ironclad.json`
+- `ironclad.aiconfig`
   Spends a bit more aggressively, values relics and removals more, and accepts a little more HP loss for long-term value.
-- `silent.json`
+- `silent.aiconfig`
   Values removals and potion buys more, keeps more gold in reserve, and prefers safer event outcomes.
-- `defect.json`
+- `defect.aiconfig`
   Leans more toward relics, flexible value purchases, upgrades, and transforms.
-- `regent.json`
+- `regent.aiconfig`
   Strongest removal/discipline profile, more conservative spending, and safer event choices.
-- `necrobinder.json`
+- `necrobinder.aiconfig`
   Spends more freely, values relics/cards more, and tolerates more event risk and variance.
 
 ## Validation and clamping

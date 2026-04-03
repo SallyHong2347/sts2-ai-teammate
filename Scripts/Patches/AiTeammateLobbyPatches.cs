@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
+using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Acts;
@@ -11,6 +12,7 @@ using MegaCrit.Sts2.Core.Multiplayer.Game;
 using MegaCrit.Sts2.Core.Multiplayer.Game.Lobby;
 using MegaCrit.Sts2.Core.Multiplayer.Messages.Lobby;
 using MegaCrit.Sts2.Core.Platform;
+using MegaCrit.Sts2.Core.Random;
 using MegaCrit.Sts2.Core.Saves;
 using MegaCrit.Sts2.Core.Unlocks;
 
@@ -32,7 +34,7 @@ internal static class AiTeammatePlatformUtilGetPlayerNamePatch
     }
 }
 
-[HarmonyPatch(typeof(StartRunLobby), "BeginRun")]
+[HarmonyPatch(typeof(StartRunLobby), "BeginRunForAllPlayers")]
 internal static class AiTeammateStartRunLobbyBeginRunPatch
 {
     [HarmonyPrefix]
@@ -43,7 +45,7 @@ internal static class AiTeammateStartRunLobbyBeginRunPatch
             return true;
         }
 
-        Log.Info("[AITeammate] Intercepting StartRunLobby.BeginRun for local AI teammate loopback.");
+        Log.Info("[AITeammate] Intercepting StartRunLobby.BeginRunForAllPlayers for local AI teammate loopback.");
 
         MethodInfo? updatePreferredAscensionMethod = AccessTools.Method(typeof(StartRunLobby), "UpdatePreferredAscension");
         updatePreferredAscensionMethod?.Invoke(__instance, Array.Empty<object>());
@@ -59,14 +61,15 @@ internal static class AiTeammateStartRunLobbyBeginRunPatch
         __instance.NetService.SendMessage(beginRunMessage);
 
         UnlockState unlockState = GetUnlockState(__instance);
-        List<ActModel> acts = ActModel.GetRandomList(seed, unlockState, __instance.NetService.Type.IsMultiplayer()).ToList();
+        Rng rng = new((uint)StringHelper.GetDeterministicHashCode(seed));
+        List<ActModel> acts = ActModel.GetRandomList(rng, unlockState, __instance.NetService.Type.IsMultiplayer()).ToList();
         ActModel? act1Override = GetAct1(__instance.Act1);
         if (act1Override != null)
         {
             acts[0] = act1Override;
         }
 
-        AccessTools.Field(typeof(StartRunLobby), "_beginningRun")?.SetValue(__instance, true);
+        AccessTools.Field(typeof(StartRunLobby), "_isBeginningRun")?.SetValue(__instance, true);
         __instance.LobbyListener.BeginRun(seed, acts, modifiers);
         return false;
     }

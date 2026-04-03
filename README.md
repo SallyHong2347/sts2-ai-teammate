@@ -9,7 +9,7 @@ This repository is the public codebase for the mod. It is intended for players w
 - Adds AI-controlled teammates to a local fake-multiplayer run
 - Lets AI teammates participate in combat, rewards, potion usage, shops, and many event flows
 - Uses one mostly shared AI runtime rather than separate per-character planner implementations
-- Ships with per-character JSON tuning files so different teammates can behave differently without duplicating the whole AI stack
+- Ships with per-character behavior tuning files so different teammates can behave differently without duplicating the whole AI stack
 
 The AI is functional, but it is still heuristic and experimental. It can make awkward or poor decisions, especially in edge cases.
 
@@ -46,7 +46,7 @@ Shipped behavior config files live under:
 The mod loads:
 
 1. the current character file
-2. `default.json`
+2. `default.aiconfig`
 3. built-in defaults
 
 The current config surface covers:

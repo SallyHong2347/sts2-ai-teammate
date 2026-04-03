@@ -12,17 +12,20 @@ This is an experimental mod. The AI is functional and can complete a lot of norm
 
 - Adds AI-controlled teammates to a local fake-multiplayer run
 - Supports multiple teammate characters with different behavior profiles
-- Includes per-character JSON config files for users who want to tune AI behavior
+- Includes per-character behavior config files for users who want to tune AI behavior
 - Handles combat, rewards, potions, shops, and many events through a shared AI system
 - Uses conservative fallback behavior in places where bespoke support is incomplete
 
 ## How to use it
 
 1. Install the mod and its required dependencies.
-2. Launch the game with mods enabled.
-3. Open the AI Teammate setup flow from the mod's menu entry.
-4. Choose the characters you want for the host slot and AI teammate slots.
-5. Start the run.
+2. Copy the mod `.dll`, `.json`, and `config` files into `xxx\Steam\steamapps\common\Slay the Spire 2\mods\sts2AITeammate\`.
+3. If you want to use an existing non-modded save, copy your existing `profile1`, `profile2`, or `profile3` folders into `C:\Users\[YourUserName]\AppData\Roaming\SlayTheSpire2\steam\[YourSteamID]\modded`. If the `modded` folder does not exist yet, create it first.
+4. Launch the game. On first detection, the game should prompt you to load the mod.
+5. Launch again with the mod enabled.
+6. Open the AI Teammate setup flow from the mod's menu entry.
+7. Choose the characters you want for the host slot and AI teammate slots.
+8. Start the run.
 
 During the run, the AI teammates will act on their own when it is their turn or when they need to make supported combat, reward, shop, potion, or event decisions.
 
@@ -52,13 +55,13 @@ Most players do not need to touch these files, but tinkerers can use them to adj
 
 See the full install guide here:
 
-- [INSTALL.md](INSTALL.md)
+- `https://github.com/SallyHong2347/sts2-ai-teammate/blob/main/docs/INSTALL.md`
 
 ## Known limitations
 
 See the player-facing limitations page here:
 
-- [LIMITATIONS.md](LIMITATIONS.md)
+- `https://github.com/SallyHong2347/sts2-ai-teammate/blob/main/docs/LIMITATIONS.md`
 
 ## Source / GitHub
 

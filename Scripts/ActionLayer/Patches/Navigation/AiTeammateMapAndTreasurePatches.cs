@@ -17,7 +17,7 @@ internal static class AiTeammateMapAndTreasurePatches
     [HarmonyPatch(typeof(MapSelectionSynchronizer), nameof(MapSelectionSynchronizer.PlayerVotedForMapCoord))]
     private static class MapSelectionSynchronizerPatch
     {
-        private static void Postfix(Player player, RunLocation source, MapVote? destination)
+        private static void Postfix(Player player, MapLocation source, MapVote? destination)
         {
             AiTeammateSessionState? session = AiTeammateSessionRegistry.Current;
             if (session == null || player.NetId != session.HostPlayerId)
@@ -68,7 +68,13 @@ internal static class AiTeammateMapAndTreasurePatches
             foreach (AiTeammateSessionParticipant participant in session.Participants.Where(static participant => !participant.IsHost))
             {
                 Player? aiPlayer = RunManager.Instance.DebugOnlyGetState()?.GetPlayer(participant.PlayerId);
-                if (aiPlayer == null || __instance.GetPlayerVote(aiPlayer).HasValue)
+                if (aiPlayer == null)
+                {
+                    continue;
+                }
+
+                TreasureRoomRelicSynchronizer.PlayerVote playerVote = __instance.GetPlayerVote(aiPlayer);
+                if (playerVote.voteReceived)
                 {
                     continue;
                 }

@@ -270,7 +270,7 @@ public partial class AiTeammateCharacterSetupScreen
         lobbyPlayer.unlockState = SaveManager.Instance.GenerateUnlockStateFromProgress().ToSerializable();
         lobbyPlayer.maxMultiplayerAscensionUnlocked = SaveManager.Instance.Progress.MaxMultiplayerAscension;
         _lobby.Players[playerIndex] = lobbyPlayer;
-        PlayerChanged(lobbyPlayer);
+        HandlePlayerChanged(lobbyPlayer);
     }
 
     private void InvokeLobbyUpdateMaxAscension()
@@ -409,8 +409,12 @@ public partial class AiTeammateCharacterSetupScreen
 
     public void PlayerChanged(LobbyPlayer player)
     {
-        _remoteLobbyPlayerContainer?.OnPlayerChanged(player);
-        HideInviteControls(_remoteLobbyPlayerContainer);
+        HandlePlayerChanged(player);
+    }
+
+    public void PlayerChanged(LobbyPlayer player, bool isRandomCharacterResolution)
+    {
+        HandlePlayerChanged(player);
     }
 
     public void AscensionChanged()
@@ -482,6 +486,12 @@ public partial class AiTeammateCharacterSetupScreen
                 canvasItem.Visible = false;
             }
         }
+    }
+
+    private void HandlePlayerChanged(LobbyPlayer player)
+    {
+        _remoteLobbyPlayerContainer?.OnPlayerChanged(player);
+        HideInviteControls(_remoteLobbyPlayerContainer);
     }
 
     private static IEnumerable<Node> EnumerateDescendants(Node root)

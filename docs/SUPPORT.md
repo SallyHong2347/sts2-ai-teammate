@@ -19,4 +19,4 @@ Much of the project was built through AI-assisted development and iteration. Tha
 
 - Treat it as an experimental teammate system, not a polished competitive AI.
 - Expect occasional strange behavior.
-- If you want different personalities, start with the JSON config files under `config/ai-behavior/`.
+- If you want different personalities, start with the shipped behavior config files under `config/ai-behavior/`.

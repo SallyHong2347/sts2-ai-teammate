@@ -11,6 +11,7 @@ namespace AITeammate.Scripts;
 
 internal static class AiCharacterCombatConfigLoader
 {
+    private const string ConfigFileExtension = ".aiconfig";
     private static readonly object Sync = new();
     private static readonly Dictionary<string, AiCharacterCombatConfig> Cache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -46,13 +47,13 @@ internal static class AiCharacterCombatConfigLoader
             }
 
             AiCharacterCombatConfig baseConfig = ReadMergedConfig(
-                Path.Combine(GetConfigDirectoryPath(), "default.json"),
+                GetConfigFilePath(AiCharacterCombatConfig.DefaultCharacterId),
                 AiCharacterCombatConfig.CreateBuiltInDefault());
 
             AiCharacterCombatConfig resolved = characterId.Equals(AiCharacterCombatConfig.DefaultCharacterId, StringComparison.OrdinalIgnoreCase)
                 ? baseConfig
                 : ReadMergedConfig(
-                    Path.Combine(GetConfigDirectoryPath(), $"{characterId}.json"),
+                    GetConfigFilePath(characterId),
                     baseConfig,
                     characterId,
                     displayName);
@@ -134,7 +135,7 @@ internal static class AiCharacterCombatConfigLoader
 
         foreach (AiCharacterCombatConfig builtIn in AiCharacterCombatConfigCatalog.BuiltInFiles)
         {
-            string path = Path.Combine(configDirectory, $"{builtIn.CharacterId}.json");
+            string path = GetConfigFilePath(builtIn.CharacterId);
             if (File.Exists(path))
             {
                 continue;
@@ -143,6 +144,11 @@ internal static class AiCharacterCombatConfigLoader
             File.WriteAllText(path, JsonSerializer.Serialize(builtIn, JsonOptions));
             Log.Info($"[AITeammate][Config] Wrote default config file at {path}.");
         }
+    }
+
+    private static string GetConfigFilePath(string characterId)
+    {
+        return Path.Combine(GetConfigDirectoryPath(), $"{NormalizeCharacterId(characterId)}{ConfigFileExtension}");
     }
 
     private static string ResolveCharacterId(Player player)

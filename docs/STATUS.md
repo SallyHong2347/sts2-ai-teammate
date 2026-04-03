@@ -9,7 +9,7 @@ The current public codebase includes:
 - a working AI teammate run flow
 - combat decision-making through a shared heuristic runtime
 - deterministic handling for many reward and card-selection flows
-- per-character JSON behavior tuning
+- per-character behavior tuning
 - configurable combat, card reward, potion, shop, and event valuation
 - public config and preset documentation
 
