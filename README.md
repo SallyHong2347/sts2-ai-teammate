@@ -4,6 +4,8 @@ AI Teammate is an experimental Slay the Spire 2 mod that adds AI-controlled team
 
 This repository is the public codebase for the mod. It is intended for players who want to use the release, and for tinkerers who want to inspect, tune, fork, or extend the project.
 
+Compatibility note: the current `beta-402` branch is updated for the Slay the Spire 2 public beta release from April 2, 2026.
+
 ## What the mod currently does
 
 - Adds AI-controlled teammates to a local fake-multiplayer run

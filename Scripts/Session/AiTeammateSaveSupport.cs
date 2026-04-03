@@ -18,6 +18,7 @@ using MegaCrit.Sts2.Core.Multiplayer.Game.Lobby;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.Audio;
 using MegaCrit.Sts2.Core.Nodes.CommonUi;
+using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves;
 using MegaCrit.Sts2.Core.Saves.Runs;
@@ -236,7 +237,8 @@ internal static class AiTeammateSaveSupport
                 RunHistoryUtilities.CreateRunHistoryEntry(savedRun.SaveData, victory: false, isAbandoned: true, savedRun.SaveData.PlatformType);
                 if (savedRun.SaveData.DailyTime.HasValue)
                 {
-                    int score = ScoreUtility.CalculateScore(savedRun.SaveData, won: false);
+                    ulong localPlayerId = PlatformUtil.GetLocalPlayerId(savedRun.SaveData.PlatformType);
+                    int score = ScoreUtility.CalculateScore(savedRun.SaveData, localPlayerId, won: false);
                     TaskHelper.RunSafely(DailyRunUtility.UploadScore(savedRun.SaveData.DailyTime.Value, score, savedRun.SaveData.Players));
                 }
             }
