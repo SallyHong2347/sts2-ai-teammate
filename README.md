@@ -10,7 +10,7 @@ Compatibility note: the current `beta-402` branch is updated for the Slay the Sp
 
 - Rest-site logic now scores `Rest`, `Smith`, and supported special options more cleanly, including `Mend`
 - Combat target generation and reactive-punishment handling have been improved for cards and potions
-- The test map now supports a fast full-run validation route and lightweight enemy HP clamping for end-to-end checks
+- Potion scoring and same-turn potion follow-up planning have been improved, including better mixed-effect evaluation
 
 ## What the mod currently does
 
