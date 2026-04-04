@@ -2,12 +2,23 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using MegaCrit.Sts2.Core.Entities.Cards;
+using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Models;
 
 namespace AITeammate.Scripts;
 
 internal sealed class EventValuationHelpers
 {
+    public IReadOnlyList<UpgradeCandidateEvaluation> RankUpgradeCandidates(IEnumerable<CardModel> cards, AiEventTuning tuning)
+    {
+        return cards
+            .Where(static card => card.IsUpgradable)
+            .Select(card => EvaluateUpgradeCandidate(card, tuning))
+            .OrderByDescending(static candidate => candidate.Score)
+            .ThenBy(candidate => candidate.Name, StringComparer.Ordinal)
+            .ToList();
+    }
+
     public double EvaluateRelic(string? relicId, string? rarity, EventVisitState snapshot, List<string> reasons, AiEventTuning tuning)
     {
         double totalScore = rarity switch
@@ -95,20 +106,30 @@ internal sealed class EventValuationHelpers
 
     public EventRemovalCandidate? SelectBestRemovalCandidate(EventVisitState snapshot)
     {
-        Dictionary<string, int> copiesById = snapshot.Player.Deck.Cards
+        return SelectBestRemovalCandidate(snapshot.Player, snapshot.DeckCards);
+    }
+
+    public EventRemovalCandidate? SelectBestRemovalCandidate(Player player, IReadOnlyList<ResolvedCardView> deckCards)
+    {
+        return RankRemovalCandidates(player, deckCards).FirstOrDefault();
+    }
+
+    public IReadOnlyList<EventRemovalCandidate> RankRemovalCandidates(Player player, IReadOnlyList<ResolvedCardView> deckCards)
+    {
+        Dictionary<string, int> copiesById = player.Deck.Cards
             .GroupBy(static card => card.Id.Entry, StringComparer.Ordinal)
             .ToDictionary(static group => group.Key, static group => group.Count(), StringComparer.Ordinal);
 
         List<EventRemovalCandidate> candidates = [];
-        for (int index = 0; index < snapshot.Player.Deck.Cards.Count; index++)
+        for (int index = 0; index < player.Deck.Cards.Count; index++)
         {
-            CardModel deckCard = snapshot.Player.Deck.Cards[index];
+            CardModel deckCard = player.Deck.Cards[index];
             if (!deckCard.IsRemovable)
             {
                 continue;
             }
 
-            ResolvedCardView resolved = snapshot.DeckCards[index];
+            ResolvedCardView resolved = deckCards[index];
             double burden = 0d;
             List<string> reasons = [];
 
@@ -229,53 +250,57 @@ internal sealed class EventValuationHelpers
         return candidates
             .OrderByDescending(static candidate => candidate.BurdenScore)
             .ThenBy(candidate => candidate.Name, StringComparer.Ordinal)
-            .FirstOrDefault();
+            .ToList();
     }
 
     public double EvaluateBestUpgradeTarget(EventVisitState snapshot, int count, List<string> reasons, AiEventTuning tuning)
     {
-        List<(string CardId, string Name, double Score, List<string> Reasons)> candidates = [];
-        foreach (CardModel card in snapshot.Player.Deck.Cards.Where(static card => card.IsUpgradable))
-        {
-            double score = 0d;
-            List<string> candidateReasons = [];
-            if (!CardCatalogRepository.Shared.TryGet(card.Id.Entry, out CardCatalogEntry? entry) || entry == null)
-            {
-                score = 8d;
-                candidateReasons.Add("missing catalog entry fallback +8.0");
-            }
-            else
-            {
-                score += EvaluateUpgradeSpec(entry.UpgradeSpec, candidateReasons, tuning);
-                if (entry.Rarity == "Basic")
-                {
-                    score += tuning.OutcomeWeights.UpgradeBasicCardBonus;
-                    candidateReasons.Add($"basic card cleanup/value +{tuning.OutcomeWeights.UpgradeBasicCardBonus:F1}");
-                }
-
-                if (entry.Type == CardType.Power)
-                {
-                    score += tuning.OutcomeWeights.UpgradePowerCardBonus;
-                    candidateReasons.Add($"power upgrade bias +{tuning.OutcomeWeights.UpgradePowerCardBonus:F1}");
-                }
-            }
-
-            candidates.Add((card.Id.Entry, card.Title?.ToString() ?? card.Id.Entry, score, candidateReasons));
-        }
-
-        List<(string CardId, string Name, double Score, List<string> Reasons)> best = candidates
-            .OrderByDescending(static candidate => candidate.Score)
-            .ThenBy(candidate => candidate.Name, StringComparer.Ordinal)
+        List<UpgradeCandidateEvaluation> best = RankUpgradeCandidates(snapshot.Player.Deck.Cards, tuning)
             .Take(Math.Max(1, count))
             .ToList();
 
         double total = best.Sum(static candidate => candidate.Score) * tuning.OutcomeWeights.UpgradeRewardMultiplier;
-        foreach (var candidate in best)
+        foreach (UpgradeCandidateEvaluation candidate in best)
         {
             reasons.Add($"bestUpgradeTarget={candidate.CardId} score={candidate.Score:F1} detail=[{string.Join(", ", candidate.Reasons)}]");
         }
 
         return total;
+    }
+
+    private static UpgradeCandidateEvaluation EvaluateUpgradeCandidate(CardModel card, AiEventTuning tuning)
+    {
+        double score = 0d;
+        List<string> candidateReasons = [];
+        if (!CardCatalogRepository.Shared.TryGet(card.Id.Entry, out CardCatalogEntry? entry) || entry == null)
+        {
+            score = 8d;
+            candidateReasons.Add("missing catalog entry fallback +8.0");
+        }
+        else
+        {
+            score += EvaluateUpgradeSpec(entry.UpgradeSpec, candidateReasons, tuning);
+            if (entry.Rarity == "Basic")
+            {
+                score += tuning.OutcomeWeights.UpgradeBasicCardBonus;
+                candidateReasons.Add($"basic card cleanup/value +{tuning.OutcomeWeights.UpgradeBasicCardBonus:F1}");
+            }
+
+            if (entry.Type == CardType.Power)
+            {
+                score += tuning.OutcomeWeights.UpgradePowerCardBonus;
+                candidateReasons.Add($"power upgrade bias +{tuning.OutcomeWeights.UpgradePowerCardBonus:F1}");
+            }
+        }
+
+        return new UpgradeCandidateEvaluation
+        {
+            CardId = card.Id.Entry,
+            Name = card.Title?.ToString() ?? card.Id.Entry,
+            Score = score,
+            RuntimeCard = card,
+            Reasons = candidateReasons
+        };
     }
 
     public double EvaluateTransform(EventVisitState snapshot, int count, List<string> reasons, AiEventTuning tuning)

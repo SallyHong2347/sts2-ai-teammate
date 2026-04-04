@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using MegaCrit.Sts2.Core.Logging;
 
 namespace AITeammate.Scripts;
 
@@ -20,7 +21,6 @@ internal sealed class CombatTurnLinePlanner
     {
         List<PlannableAction> actions = context.LegalActions
             .Select(action => BuildPlannableAction(context, action))
-            .Where(static action => !action.IsEndTurn)
             .ToList();
         if (actions.Count == 0)
         {
@@ -74,13 +74,75 @@ internal sealed class CombatTurnLinePlanner
             .ThenBy(node => string.Join("|", node.ActionIds), StringComparer.Ordinal)
             .First();
 
+        List<CombatLineCandidateSummary> candidateSummaries = bestNodes
+            .Select(node => new CombatLineCandidateSummary
+            {
+                ActionIds = node.ActionIds.ToList(),
+                TerminalScore = node.ComputeTerminalScore(context, actions),
+                EstimatedDamageTaken = node.EstimatedDamageTaken(context),
+                EstimatedReactiveDamageTaken = node.EstimatedReactiveDamageTaken,
+                EstimatedReactiveDamageBlocked = node.EstimatedReactiveDamageBlocked,
+                EstimatedBlockAfterEnemyTurn = node.EstimatedBlockAfterEnemyTurn(context),
+                PotionSetupScore = node.PotionSetupScore,
+                PotionFollowUpDamageBonus = node.PotionFollowUpDamageBonus,
+                PotionFollowUpBlockBonus = node.PotionFollowUpBlockBonus
+            })
+            .Distinct(CombatLineCandidateSummaryComparer.Instance)
+            .OrderByDescending(static summary => summary.TerminalScore)
+            .ThenBy(summary => string.Join("|", summary.ActionIds), StringComparer.Ordinal)
+            .Take(5)
+            .ToList();
+
+        List<CombatLineCandidateSummary> reactiveCandidateSummaries = bestNodes
+            .Where(node => node.EstimatedReactiveDamageTaken > 0 || node.EstimatedReactiveDamageBlocked > 0)
+            .Select(node => new CombatLineCandidateSummary
+            {
+                ActionIds = node.ActionIds.ToList(),
+                TerminalScore = node.ComputeTerminalScore(context, actions),
+                EstimatedDamageTaken = node.EstimatedDamageTaken(context),
+                EstimatedReactiveDamageTaken = node.EstimatedReactiveDamageTaken,
+                EstimatedReactiveDamageBlocked = node.EstimatedReactiveDamageBlocked,
+                EstimatedBlockAfterEnemyTurn = node.EstimatedBlockAfterEnemyTurn(context),
+                PotionSetupScore = node.PotionSetupScore,
+                PotionFollowUpDamageBonus = node.PotionFollowUpDamageBonus,
+                PotionFollowUpBlockBonus = node.PotionFollowUpBlockBonus
+            })
+            .Distinct(CombatLineCandidateSummaryComparer.Instance)
+            .OrderByDescending(static summary => summary.TerminalScore)
+            .ThenBy(summary => string.Join("|", summary.ActionIds), StringComparer.Ordinal)
+            .Take(3)
+            .ToList();
+
+        foreach (CombatLineCandidateSummary summary in candidateSummaries)
+        {
+            Log.Info(
+                $"[AITeammate] Combat line candidate actor={context.Actor.NetId} line=[{string.Join(", ", summary.ActionIds)}] firstAction={summary.FirstActionId} terminalScore={summary.TerminalScore} estTaken={summary.EstimatedDamageTaken} reactiveEstTaken={summary.EstimatedReactiveDamageTaken} reactiveEstBlocked={summary.EstimatedReactiveDamageBlocked} estRetainedBlock={summary.EstimatedBlockAfterEnemyTurn}");
+            if (summary.PotionSetupScore > 0 || summary.PotionFollowUpDamageBonus > 0 || summary.PotionFollowUpBlockBonus > 0)
+            {
+                Log.Info(
+                    $"[AITeammate] Combat potion line actor={context.Actor.NetId} line=[{string.Join(", ", summary.ActionIds)}] firstAction={summary.FirstActionId} potionSetupScore={summary.PotionSetupScore} potionFollowUpDamage={summary.PotionFollowUpDamageBonus} potionFollowUpBlock={summary.PotionFollowUpBlockBonus}");
+            }
+        }
+
+        foreach (CombatLineCandidateSummary summary in reactiveCandidateSummaries)
+        {
+            Log.Info(
+                $"[AITeammate] Combat reactive line actor={context.Actor.NetId} line=[{string.Join(", ", summary.ActionIds)}] firstAction={summary.FirstActionId} terminalScore={summary.TerminalScore} estTaken={summary.EstimatedDamageTaken} reactiveEstTaken={summary.EstimatedReactiveDamageTaken} reactiveEstBlocked={summary.EstimatedReactiveDamageBlocked} estRetainedBlock={summary.EstimatedBlockAfterEnemyTurn}");
+        }
+
         return new CombatLinePlan
         {
             ActionIds = best.ActionIds.ToList(),
             Score = best.ComputeTerminalScore(context, actions),
             EstimatedDamageDealt = best.TotalDamageDealt,
             EstimatedDamageTaken = best.EstimatedDamageTaken(context),
-            EstimatedBlockAfterEnemyTurn = best.EstimatedBlockAfterEnemyTurn(context)
+            EstimatedReactiveDamageTaken = best.EstimatedReactiveDamageTaken,
+            EstimatedReactiveDamageBlocked = best.EstimatedReactiveDamageBlocked,
+            EstimatedBlockAfterEnemyTurn = best.EstimatedBlockAfterEnemyTurn(context),
+            PotionSetupScore = best.PotionSetupScore,
+            PotionFollowUpDamageBonus = best.PotionFollowUpDamageBonus,
+            PotionFollowUpBlockBonus = best.PotionFollowUpBlockBonus,
+            CandidateSummaries = candidateSummaries
         };
     }
 
@@ -88,16 +150,17 @@ internal sealed class CombatTurnLinePlanner
     {
         CombatActionScore immediateScore = _scorer.Score(context, action);
         ResolvedCardView? card = ResolveCard(context, action);
-        int damage = card.GetEstimatedDamage();
-        int block = card.GetEstimatedBlock();
-        int cardsDrawn = card.GetCardsDrawn();
-        int energyGain = Math.Max(card.GetEnergyGain(), 0);
-        int vulnerable = card.GetEnemyVulnerableAmount();
-        int weak = card.GetEnemyWeakAmount();
-        int selfStrength = card.GetSelfStrengthAmount();
-        int selfTemporaryStrength = card.GetSelfTemporaryStrengthAmount();
-        int selfDexterity = card.GetSelfDexterityAmount();
-        int selfTemporaryDexterity = card.GetSelfTemporaryDexterityAmount();
+        PotionPlanningContribution potionContribution = BuildPotionPlanningContribution(context, action);
+        int damage = card?.GetEstimatedDamage() ?? 0;
+        int block = Math.Max(card?.GetEstimatedBlock() ?? 0, potionContribution.Block);
+        int cardsDrawn = Math.Max(card?.GetCardsDrawn() ?? 0, potionContribution.CardsDrawn);
+        int energyGain = Math.Max(Math.Max(card?.GetEnergyGain() ?? 0, 0), potionContribution.EnergyGain);
+        int vulnerable = Math.Max(card?.GetEnemyVulnerableAmount() ?? 0, potionContribution.Vulnerable);
+        int weak = Math.Max(card?.GetEnemyWeakAmount() ?? 0, potionContribution.Weak);
+        int selfStrength = Math.Max(card?.GetSelfStrengthAmount() ?? 0, potionContribution.SelfStrength + potionContribution.SelfTemporaryStrength);
+        int selfTemporaryStrength = Math.Max(card?.GetSelfTemporaryStrengthAmount() ?? 0, potionContribution.SelfTemporaryStrength);
+        int selfDexterity = Math.Max(card?.GetSelfDexterityAmount() ?? 0, potionContribution.SelfDexterity + potionContribution.SelfTemporaryDexterity);
+        int selfTemporaryDexterity = Math.Max(card?.GetSelfTemporaryDexterityAmount() ?? 0, potionContribution.SelfTemporaryDexterity);
         bool isHighVariance = cardsDrawn > 0;
         bool isOffensivePotion = IsOffensivePotion(action);
         bool appliesVulnerable = vulnerable > 0;
@@ -126,18 +189,20 @@ internal sealed class CombatTurnLinePlanner
             SelfTemporaryDexterity = selfTemporaryDexterity,
             IsHighVariance = isHighVariance,
             IsEndTurn = string.Equals(action.ActionType, AiTeammateActionKind.EndTurn.ToString(), StringComparison.Ordinal),
+            IsPotion = string.Equals(action.ActionType, AiTeammateActionKind.UsePotion.ToString(), StringComparison.Ordinal),
             IsOffensivePotion = isOffensivePotion,
             AppliesVulnerable = appliesVulnerable,
-            IsSetup = immediateScore.Category is CombatActionCategory.PowerSetup or CombatActionCategory.Utility,
+            IsSetup = immediateScore.Category is CombatActionCategory.PowerSetup or CombatActionCategory.Utility || potionContribution.HasSetupContribution,
+            PlanningNotes = potionContribution.Notes,
             ConsumptionKey = BuildConsumptionKey(action)
         };
     }
 
-    private static LineNode CreateInitialNode(DeterministicCombatContext context, PlannableAction action)
-    {
-        LineNode node = new(context.Energy);
-        return node.Apply(context, action);
-    }
+        private static LineNode CreateInitialNode(DeterministicCombatContext context, PlannableAction action)
+        {
+            LineNode node = new(context.Energy, context.CurrentBlock);
+            return node.Apply(context, action);
+        }
 
     private static ResolvedCardView? ResolveCard(DeterministicCombatContext context, AiLegalActionOption action)
     {
@@ -166,11 +231,19 @@ internal sealed class CombatTurnLinePlanner
     {
         if (!string.IsNullOrEmpty(action.CardInstanceId))
         {
+            // Target variants for the same hand card instance must collapse to one consumable resource.
             return $"card:{action.CardInstanceId}";
         }
 
         if (string.Equals(action.ActionType, AiTeammateActionKind.UsePotion.ToString(), StringComparison.Ordinal))
         {
+            if (action.Metadata != null &&
+                action.Metadata.TryGetValue("potion_slot_index", out string? potionSlotIndex) &&
+                !string.IsNullOrWhiteSpace(potionSlotIndex))
+            {
+                return $"potion_slot:{potionSlotIndex}";
+            }
+
             return $"potion:{action.ActionId}";
         }
 
@@ -179,12 +252,198 @@ internal sealed class CombatTurnLinePlanner
 
     private static bool IsOffensivePotion(AiLegalActionOption action)
     {
-        string potionId = action.CardId ?? string.Empty;
-        return potionId.Contains("BINDING", StringComparison.OrdinalIgnoreCase)
-               || potionId.Contains("VULNERABLE", StringComparison.OrdinalIgnoreCase)
-               || potionId.Contains("WEAK", StringComparison.OrdinalIgnoreCase)
-               || potionId.Contains("POISON", StringComparison.OrdinalIgnoreCase)
-               || potionId.Contains("FIRE", StringComparison.OrdinalIgnoreCase);
+        return !string.IsNullOrWhiteSpace(action.CardId) &&
+               PotionMetadataRepository.Shared.TryGet(action.CardId, out PotionMetadata? metadata) &&
+               metadata?.Offensive == true &&
+               !metadata.HarmsSelf &&
+               !metadata.HarmsTeammate &&
+               !metadata.HarmsAllAllies;
+    }
+
+    private static PotionPlanningContribution BuildPotionPlanningContribution(DeterministicCombatContext context, AiLegalActionOption action)
+    {
+        if (!string.Equals(action.ActionType, AiTeammateActionKind.UsePotion.ToString(), StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(action.CardId) ||
+            !PotionMetadataRepository.Shared.TryGet(action.CardId, out PotionMetadata? metadata) ||
+            metadata == null)
+        {
+            return PotionPlanningContribution.None;
+        }
+
+        PotionPlanningContribution contribution = PotionPlanningContribution.None;
+        List<string> notes = [];
+        foreach (PotionEffectDescriptor effect in metadata.Effects)
+        {
+            int magnitude = ResolvePotionPlanningMagnitude(effect);
+            if (magnitude <= 0)
+            {
+                continue;
+            }
+
+            switch (effect.Kind)
+            {
+                case PotionEffectKind.GainBlock:
+                    if (PotionEffectAppliesToActor(context, action, effect))
+                    {
+                        contribution.Block += magnitude;
+                        notes.Add($"block={magnitude}@{DescribePotionRecipient(context, action, effect)}");
+                    }
+                    break;
+                case PotionEffectKind.GainEnergy:
+                    if (PotionEffectAppliesToActor(context, action, effect))
+                    {
+                        contribution.EnergyGain += magnitude;
+                        notes.Add($"energy={magnitude}@{DescribePotionRecipient(context, action, effect)}");
+                    }
+                    break;
+                case PotionEffectKind.DrawCards:
+                    if (PotionEffectAppliesToActor(context, action, effect))
+                    {
+                        contribution.CardsDrawn += magnitude;
+                        notes.Add($"draw={magnitude}@{DescribePotionRecipient(context, action, effect)}");
+                    }
+                    break;
+                case PotionEffectKind.ApplyPower:
+                    if (effect.IsBuff && PotionEffectAppliesToActor(context, action, effect))
+                    {
+                        if (TryApplyPotionSelfBuff(effect.AppliedPowerId, magnitude, ref contribution, out string? buffNote) &&
+                            !string.IsNullOrWhiteSpace(buffNote))
+                        {
+                            notes.Add($"{buffNote}@{DescribePotionRecipient(context, action, effect)}");
+                        }
+                    }
+                    else if (effect.IsDebuff && PotionEffectAppliesToChosenEnemy(context, action, effect))
+                    {
+                        if (IsVulnerablePower(effect.AppliedPowerId))
+                        {
+                            contribution.Vulnerable = Math.Max(contribution.Vulnerable, magnitude);
+                            notes.Add($"targetVulnerable={magnitude}");
+                        }
+                        else if (IsWeakPower(effect.AppliedPowerId))
+                        {
+                            contribution.Weak = Math.Max(contribution.Weak, magnitude);
+                            notes.Add($"targetWeak={magnitude}");
+                        }
+                    }
+                    break;
+            }
+        }
+
+        if (notes.Count > 0)
+        {
+            contribution.Notes = string.Join(", ", notes);
+        }
+
+        return contribution;
+    }
+
+    private static int ResolvePotionPlanningMagnitude(PotionEffectDescriptor effect)
+    {
+        int magnitude = Math.Max(0, effect.Magnitude ?? 0);
+        return effect.MagnitudeKind switch
+        {
+            PotionMagnitudeKind.Static => magnitude,
+            PotionMagnitudeKind.RuntimeComputed => magnitude,
+            PotionMagnitudeKind.ChoiceDependent => Math.Max(0, (int)Math.Round(magnitude * 0.75d, MidpointRounding.AwayFromZero)),
+            PotionMagnitudeKind.Randomized => Math.Max(0, (int)Math.Round(magnitude * 0.60d, MidpointRounding.AwayFromZero)),
+            _ => 0
+        };
+    }
+
+    private static bool PotionEffectAppliesToActor(DeterministicCombatContext context, AiLegalActionOption action, PotionEffectDescriptor effect)
+    {
+        if (effect.CanAffectSelf)
+        {
+            return true;
+        }
+
+        string actorTargetId = $"player_{context.Actor.NetId}";
+        return effect.TargetKind == PotionMetadataTargetKind.SingleAlly &&
+               string.Equals(action.TargetId, actorTargetId, StringComparison.Ordinal);
+    }
+
+    private static string DescribePotionRecipient(DeterministicCombatContext context, AiLegalActionOption action, PotionEffectDescriptor effect)
+    {
+        if (PotionEffectAppliesToActor(context, action, effect))
+        {
+            return "actor";
+        }
+
+        if (effect.CanAffectAllAllies)
+        {
+            return "all_allies";
+        }
+
+        if (effect.CanAffectTeammate && !string.IsNullOrWhiteSpace(action.TargetId))
+        {
+            return $"target:{action.TargetId}";
+        }
+
+        if (effect.CanAffectSingleEnemy && !string.IsNullOrWhiteSpace(action.TargetId))
+        {
+            return $"enemy:{action.TargetId}";
+        }
+
+        return "none";
+    }
+
+    private static bool PotionEffectAppliesToChosenEnemy(DeterministicCombatContext context, AiLegalActionOption action, PotionEffectDescriptor effect)
+    {
+        return !string.IsNullOrEmpty(action.TargetId) &&
+               context.EnemiesById.ContainsKey(action.TargetId) &&
+               effect.CanAffectSingleEnemy &&
+               effect.TargetKind == PotionMetadataTargetKind.SingleEnemy;
+    }
+
+    private static bool TryApplyPotionSelfBuff(string? powerId, int magnitude, ref PotionPlanningContribution contribution, out string? note)
+    {
+        note = null;
+        if (string.IsNullOrWhiteSpace(powerId) || magnitude <= 0)
+        {
+            return false;
+        }
+
+        if (powerId.Contains("FlexPotion", StringComparison.OrdinalIgnoreCase))
+        {
+            contribution.SelfTemporaryStrength += magnitude;
+            note = $"tempStrength={magnitude}";
+            return true;
+        }
+
+        if (powerId.Contains("SpeedPotion", StringComparison.OrdinalIgnoreCase))
+        {
+            contribution.SelfTemporaryDexterity += magnitude;
+            note = $"tempDexterity={magnitude}";
+            return true;
+        }
+
+        if (powerId.Contains("Strength", StringComparison.OrdinalIgnoreCase))
+        {
+            contribution.SelfStrength += magnitude;
+            note = $"strength={magnitude}";
+            return true;
+        }
+
+        if (powerId.Contains("Dexterity", StringComparison.OrdinalIgnoreCase))
+        {
+            contribution.SelfDexterity += magnitude;
+            note = $"dexterity={magnitude}";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsVulnerablePower(string? powerId)
+    {
+        return !string.IsNullOrWhiteSpace(powerId) &&
+               powerId.Contains("Vulnerable", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsWeakPower(string? powerId)
+    {
+        return !string.IsNullOrWhiteSpace(powerId) &&
+               powerId.Contains("Weak", StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class PlannableAction
@@ -223,11 +482,50 @@ internal sealed class CombatTurnLinePlanner
 
         public bool IsEndTurn { get; init; }
 
+        public bool IsPotion { get; init; }
+
         public bool IsOffensivePotion { get; init; }
 
         public bool AppliesVulnerable { get; init; }
 
         public bool IsSetup { get; init; }
+
+        public string PlanningNotes { get; init; } = string.Empty;
+    }
+
+    private struct PotionPlanningContribution
+    {
+        public static PotionPlanningContribution None => new();
+
+        public int Block { get; set; }
+
+        public int CardsDrawn { get; set; }
+
+        public int EnergyGain { get; set; }
+
+        public int Vulnerable { get; set; }
+
+        public int Weak { get; set; }
+
+        public int SelfStrength { get; set; }
+
+        public int SelfTemporaryStrength { get; set; }
+
+        public int SelfDexterity { get; set; }
+
+        public int SelfTemporaryDexterity { get; set; }
+
+        public string Notes { get; set; }
+
+        public bool HasSetupContribution =>
+            CardsDrawn > 0 ||
+            EnergyGain > 0 ||
+            SelfStrength > 0 ||
+            SelfTemporaryStrength > 0 ||
+            SelfDexterity > 0 ||
+            SelfTemporaryDexterity > 0 ||
+            Vulnerable > 0 ||
+            Weak > 0;
     }
 
     private sealed class LineNode
@@ -238,9 +536,10 @@ internal sealed class CombatTurnLinePlanner
         private readonly HashSet<string> _vulnerableTargets = new(StringComparer.Ordinal);
         private readonly HashSet<string> _weakenedTargets = new(StringComparer.Ordinal);
 
-        public LineNode(int energyRemaining)
+        public LineNode(int energyRemaining, int blockAvailable)
         {
             EnergyRemaining = energyRemaining;
+            BlockAvailable = blockAvailable;
         }
 
         private LineNode(LineNode other)
@@ -262,8 +561,18 @@ internal sealed class CombatTurnLinePlanner
             TemporaryStrengthGained = other.TemporaryStrengthGained;
             DexterityGained = other.DexterityGained;
             TemporaryDexterityGained = other.TemporaryDexterityGained;
+            PotionStrengthGained = other.PotionStrengthGained;
+            PotionTemporaryStrengthGained = other.PotionTemporaryStrengthGained;
+            PotionDexterityGained = other.PotionDexterityGained;
+            PotionTemporaryDexterityGained = other.PotionTemporaryDexterityGained;
+            PotionSetupScore = other.PotionSetupScore;
+            PotionFollowUpDamageBonus = other.PotionFollowUpDamageBonus;
+            PotionFollowUpBlockBonus = other.PotionFollowUpBlockBonus;
             CardsDrawn = other.CardsDrawn;
             EnergyGenerated = other.EnergyGenerated;
+            BlockAvailable = other.BlockAvailable;
+            ReactiveDamageTaken = other.ReactiveDamageTaken;
+            ReactiveDamageBlocked = other.ReactiveDamageBlocked;
             StopExpanding = other.StopExpanding;
         }
 
@@ -291,11 +600,35 @@ internal sealed class CombatTurnLinePlanner
 
         public int TemporaryDexterityGained { get; private set; }
 
+        public int PotionStrengthGained { get; private set; }
+
+        public int PotionTemporaryStrengthGained { get; private set; }
+
+        public int PotionDexterityGained { get; private set; }
+
+        public int PotionTemporaryDexterityGained { get; private set; }
+
+        public int PotionSetupScore { get; private set; }
+
+        public int PotionFollowUpDamageBonus { get; private set; }
+
+        public int PotionFollowUpBlockBonus { get; private set; }
+
         public int CardsDrawn { get; private set; }
 
         public int EnergyGenerated { get; private set; }
 
+        public int BlockAvailable { get; private set; }
+
+        public int ReactiveDamageTaken { get; private set; }
+
+        public int ReactiveDamageBlocked { get; private set; }
+
         public bool StopExpanding { get; private set; }
+
+        public int EstimatedReactiveDamageTaken => ReactiveDamageTaken;
+
+        public int EstimatedReactiveDamageBlocked => ReactiveDamageBlocked;
 
         public bool CanApply(PlannableAction action)
         {
@@ -316,6 +649,14 @@ internal sealed class CombatTurnLinePlanner
         {
             AiCombatStatusWeights status = context.CombatConfig.Combat.StatusWeights;
             AiCombatResourceWeights resource = context.CombatConfig.Combat.ResourceWeights;
+            int blockBeforeAction = BlockAvailable;
+            ReactiveCombatPenaltyEvaluation reactivePenalty = ReactiveCombatPenaltyEvaluator.Evaluate(
+                context,
+                action.Action,
+                ResolveCard(context, action.Action),
+                action.Damage,
+                action.DamageHits,
+                blockBeforeAction);
             LineNode next = new(this)
             {
                 EnergyRemaining = Math.Max(0, EnergyRemaining - action.EnergyCost + action.EnergyGain)
@@ -325,11 +666,19 @@ internal sealed class CombatTurnLinePlanner
             next.BaseScore += action.ImmediateScore.TotalScore;
             next.EnergyGenerated += action.EnergyGain;
             next.CardsDrawn += action.CardsDrawn;
+            next.ReactiveDamageTaken += reactivePenalty.ReactiveDamageTaken;
+            next.ReactiveDamageBlocked += reactivePenalty.ReactiveDamageBlocked;
+            next.BlockAvailable = Math.Max(0, next.BlockAvailable - reactivePenalty.ReactiveDamageBlocked);
 
+            int potionDexterityForAction = next.PotionDexterityGained + next.PotionTemporaryDexterityGained;
+            int potionStrengthForAction = next.PotionStrengthGained + next.PotionTemporaryStrengthGained;
             int effectiveBlock = action.Block + next.DexterityGained + next.TemporaryDexterityGained;
+            int potionBlockBonus = action.Block > 0 ? potionDexterityForAction : 0;
             if (effectiveBlock > 0)
             {
                 next.TotalBlockGained += effectiveBlock;
+                next.BlockAvailable += effectiveBlock;
+                next.PotionFollowUpBlockBonus += potionBlockBonus;
             }
 
             if (!string.IsNullOrEmpty(action.Action.TargetId))
@@ -349,12 +698,18 @@ internal sealed class CombatTurnLinePlanner
             if (action.Damage > 0 && !string.IsNullOrEmpty(action.Action.TargetId))
             {
                 int dealtDamage = action.Damage + (next.StrengthGained + next.TemporaryStrengthGained) * action.DamageHits;
+                int potionDamageBonus = potionStrengthForAction * action.DamageHits;
                 if (next._vulnerableTargets.Contains(action.Action.TargetId))
                 {
                     dealtDamage += (int)Math.Ceiling(dealtDamage * 0.5m);
+                    if (potionDamageBonus > 0)
+                    {
+                        potionDamageBonus += (int)Math.Ceiling(potionDamageBonus * 0.5m);
+                    }
                 }
 
                 next.TotalDamageDealt += dealtDamage;
+                next.PotionFollowUpDamageBonus += potionDamageBonus;
                 next._damageByTargetId[action.Action.TargetId] = next._damageByTargetId.GetValueOrDefault(action.Action.TargetId) + dealtDamage;
 
                 if (!next._deadEnemyIds.Contains(action.Action.TargetId) &&
@@ -373,20 +728,28 @@ internal sealed class CombatTurnLinePlanner
             next.TemporaryStrengthGained += action.SelfTemporaryStrength;
             next.DexterityGained += action.SelfDexterity;
             next.TemporaryDexterityGained += action.SelfTemporaryDexterity;
+            if (action.IsPotion)
+            {
+                next.PotionStrengthGained += action.SelfStrength;
+                next.PotionTemporaryStrengthGained += action.SelfTemporaryStrength;
+                next.PotionDexterityGained += action.SelfDexterity;
+                next.PotionTemporaryDexterityGained += action.SelfTemporaryDexterity;
+            }
 
+            int setupAdded = 0;
             if (action.IsSetup)
             {
-                next.SetupScore += resource.SetupActionBonus;
+                setupAdded += resource.SetupActionBonus;
             }
 
             if (action.SelfStrength > 0 || action.SelfTemporaryStrength > 0)
             {
-                next.SetupScore += CountAffordableUnconsumedActions(next, context, requireDamage: true) * (action.SelfStrength * status.SetupPersistentStrengthValue + action.SelfTemporaryStrength * status.SetupTemporaryStrengthValue);
+                setupAdded += CountAffordableUnconsumedActions(next, context, requireDamage: true) * (action.SelfStrength * status.SetupPersistentStrengthValue + action.SelfTemporaryStrength * status.SetupTemporaryStrengthValue);
             }
 
             if (action.SelfDexterity > 0 || action.SelfTemporaryDexterity > 0)
             {
-                next.SetupScore += CountAffordableUnconsumedActions(next, context, requireBlock: true) * (action.SelfDexterity * status.SetupPersistentDexterityValue + action.SelfTemporaryDexterity * status.SetupTemporaryDexterityValue);
+                setupAdded += CountAffordableUnconsumedActions(next, context, requireBlock: true) * (action.SelfDexterity * status.SetupPersistentDexterityValue + action.SelfTemporaryDexterity * status.SetupTemporaryDexterityValue);
             }
 
             if (action.CardsDrawn > 0)
@@ -394,20 +757,44 @@ internal sealed class CombatTurnLinePlanner
                 int futurePlayableActions = CountAffordableUnconsumedActions(next, context);
                 if (next.EnergyRemaining > 0 && futurePlayableActions > 0)
                 {
-                    next.SetupScore += action.CardsDrawn * resource.SetupDrawValueWhenPlayable;
+                    setupAdded += action.CardsDrawn * resource.SetupDrawValueWhenPlayable;
                 }
                 else
                 {
-                    next.SetupScore -= action.CardsDrawn * resource.SetupDrawPenaltyWhenNotPlayable;
+                    setupAdded -= action.CardsDrawn * resource.SetupDrawPenaltyWhenNotPlayable;
                 }
             }
 
             if (action.EnergyGain > 0)
             {
-                next.SetupScore += action.EnergyGain * resource.SetupEnergyGainValue;
+                setupAdded += action.EnergyGain * resource.SetupEnergyGainValue;
             }
 
-            next.StopExpanding = action.IsHighVariance || next.ActionIds.Count >= MaxLineLength;
+            next.SetupScore += setupAdded;
+            if (action.IsPotion)
+            {
+                next.PotionSetupScore += setupAdded;
+            }
+
+            if (reactivePenalty.ReactiveDamageTaken > 0 || reactivePenalty.ReactiveDamageBlocked > 0)
+            {
+                Log.Debug(
+                    $"[AITeammate][ReactiveLine] actor={context.Actor.NetId} line=[{string.Join(", ", next.ActionIds)}] actionId={action.Action.ActionId} target={action.Action.TargetId ?? "none"} reactiveStepTaken={reactivePenalty.ReactiveDamageTaken} reactiveStepBlocked={reactivePenalty.ReactiveDamageBlocked} blockBefore={blockBeforeAction} blockAfterReactive={Math.Max(0, blockBeforeAction - reactivePenalty.ReactiveDamageBlocked)} blockAfterAction={next.BlockAvailable} lineReactiveTaken={next.ReactiveDamageTaken} lineReactiveBlocked={next.ReactiveDamageBlocked}");
+            }
+
+            if (action.IsPotion && (!string.IsNullOrWhiteSpace(action.PlanningNotes) || setupAdded != 0))
+            {
+                Log.Debug(
+                    $"[AITeammate][PotionLine] actor={context.Actor.NetId} line=[{string.Join(", ", next.ActionIds)}] actionId={action.Action.ActionId} notes={action.PlanningNotes} potionSetupAdded={setupAdded} linePotionSetup={next.PotionSetupScore} energyAfter={next.EnergyRemaining} blockAfter={next.BlockAvailable}");
+            }
+
+            if (potionBlockBonus > 0 || (action.Damage > 0 && potionStrengthForAction > 0))
+            {
+                Log.Debug(
+                    $"[AITeammate][PotionFollowUp] actor={context.Actor.NetId} line=[{string.Join(", ", next.ActionIds)}] actionId={action.Action.ActionId} stepPotionStrength={potionStrengthForAction} stepPotionDexterity={potionDexterityForAction} linePotionFollowUpDamage={next.PotionFollowUpDamageBonus} linePotionFollowUpBlock={next.PotionFollowUpBlockBonus}");
+            }
+
+            next.StopExpanding = action.IsEndTurn || action.IsHighVariance || next.ActionIds.Count >= MaxLineLength;
             return next;
         }
 
@@ -441,14 +828,13 @@ internal sealed class CombatTurnLinePlanner
         public int EstimatedDamageTaken(DeterministicCombatContext context)
         {
             int incomingDamage = Math.Max(0, context.IncomingDamage - DamagePreventedByKills - DamagePreventedByWeak);
-            int availableBlock = context.CurrentBlock + TotalBlockGained;
-            return Math.Max(0, incomingDamage - availableBlock);
+            return ReactiveDamageTaken + Math.Max(0, incomingDamage - BlockAvailable);
         }
 
         public int EstimatedBlockAfterEnemyTurn(DeterministicCombatContext context)
         {
             int incomingDamage = Math.Max(0, context.IncomingDamage - DamagePreventedByKills - DamagePreventedByWeak);
-            int leftoverBlock = Math.Max(0, context.CurrentBlock + TotalBlockGained - incomingDamage);
+            int leftoverBlock = Math.Max(0, BlockAvailable - incomingDamage);
             return context.HasBlockRetention ? leftoverBlock : 0;
         }
 
@@ -460,9 +846,8 @@ internal sealed class CombatTurnLinePlanner
             AiCombatResourceWeights resource = tuning.ResourceWeights;
             AiCombatRiskProfile risk = tuning.RiskProfile;
             int incomingDamage = Math.Max(0, context.IncomingDamage - DamagePreventedByKills - DamagePreventedByWeak);
-            int availableBlock = context.CurrentBlock + TotalBlockGained;
-            int damageTaken = Math.Max(0, incomingDamage - availableBlock);
-            int preventedByBlock = Math.Min(incomingDamage, availableBlock);
+            int damageTaken = ReactiveDamageTaken + Math.Max(0, incomingDamage - BlockAvailable);
+            int preventedByBlock = ReactiveDamageBlocked + Math.Min(incomingDamage, BlockAvailable);
             int leftoverBlock = EstimatedBlockAfterEnemyTurn(context);
             int remainingAffordableActions = actions.Count(action =>
                 !_consumedKeys.Contains(action.ConsumptionKey) &&
@@ -498,6 +883,66 @@ internal sealed class CombatTurnLinePlanner
             }
 
             return score;
+        }
+    }
+
+    private sealed class CombatLineCandidateSummaryComparer : IEqualityComparer<CombatLineCandidateSummary>
+    {
+        public static CombatLineCandidateSummaryComparer Instance { get; } = new();
+
+        public bool Equals(CombatLineCandidateSummary? x, CombatLineCandidateSummary? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return true;
+            }
+
+            if (x == null || y == null)
+            {
+                return false;
+            }
+
+            if (x.TerminalScore != y.TerminalScore ||
+                x.EstimatedDamageTaken != y.EstimatedDamageTaken ||
+                x.EstimatedReactiveDamageTaken != y.EstimatedReactiveDamageTaken ||
+                x.EstimatedReactiveDamageBlocked != y.EstimatedReactiveDamageBlocked ||
+                x.EstimatedBlockAfterEnemyTurn != y.EstimatedBlockAfterEnemyTurn ||
+                x.PotionSetupScore != y.PotionSetupScore ||
+                x.PotionFollowUpDamageBonus != y.PotionFollowUpDamageBonus ||
+                x.PotionFollowUpBlockBonus != y.PotionFollowUpBlockBonus ||
+                x.ActionIds.Count != y.ActionIds.Count)
+            {
+                return false;
+            }
+
+            for (int index = 0; index < x.ActionIds.Count; index++)
+            {
+                if (!string.Equals(x.ActionIds[index], y.ActionIds[index], StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        public int GetHashCode(CombatLineCandidateSummary obj)
+        {
+            HashCode hash = new();
+            hash.Add(obj.TerminalScore);
+            hash.Add(obj.EstimatedDamageTaken);
+            hash.Add(obj.EstimatedReactiveDamageTaken);
+            hash.Add(obj.EstimatedReactiveDamageBlocked);
+            hash.Add(obj.EstimatedBlockAfterEnemyTurn);
+            hash.Add(obj.PotionSetupScore);
+            hash.Add(obj.PotionFollowUpDamageBonus);
+            hash.Add(obj.PotionFollowUpBlockBonus);
+            foreach (string actionId in obj.ActionIds)
+            {
+                hash.Add(actionId, StringComparer.Ordinal);
+            }
+
+            return hash.ToHashCode();
         }
     }
 }

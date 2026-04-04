@@ -24,6 +24,7 @@ internal sealed partial class AiTeammateDummyController
     private static readonly FieldInfo? CardRewardCardsField =
         typeof(CardReward).GetField("_cards", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly CardChoiceEvaluator CardEvaluator = new();
+    private static readonly EventValuationHelpers UpgradeValuationHelpers = new();
 
     public static async Task ExecuteDeterministicRewardSetAsync(RewardsSet rewardsSet)
     {
@@ -122,6 +123,38 @@ internal sealed partial class AiTeammateDummyController
         IEnumerable<CardModel> selected = list.Take(desiredCount).ToList();
 
         return selected;
+    }
+
+    public static Task<IEnumerable<CardModel>> ChooseBestUpgradeCardsAsync(
+        Player player,
+        IEnumerable<CardModel> options,
+        int minSelect,
+        int maxSelect,
+        string source)
+    {
+        List<CardModel> optionList = options.Where(static card => card.IsUpgradable).ToList();
+        int desiredCount = ComputeSelectionCount(optionList.Count, minSelect, maxSelect);
+        if (desiredCount <= 0)
+        {
+            return Task.FromResult<IEnumerable<CardModel>>(Array.Empty<CardModel>());
+        }
+
+        AiEventTuning tuning = AiCharacterCombatConfigLoader.LoadForPlayer(player).Events;
+        List<UpgradeCandidateEvaluation> ranked = UpgradeValuationHelpers
+            .RankUpgradeCandidates(optionList, tuning)
+            .ToList();
+
+        foreach (UpgradeCandidateEvaluation candidate in ranked.Take(3))
+        {
+            Log.Info($"[AITeammate][Upgrade] player={player.NetId} source={source} {candidate.Describe()}");
+        }
+
+        IEnumerable<CardModel> selected = ranked
+            .Take(desiredCount)
+            .Select(static candidate => candidate.RuntimeCard)
+            .ToList();
+        Log.Info($"[AITeammate][Upgrade] player={player.NetId} source={source} selected=[{string.Join(", ", ranked.Take(desiredCount).Select(static candidate => candidate.CardId))}] optionCount={optionList.Count}");
+        return Task.FromResult(selected);
     }
 
     public static RelicModel? ChooseFirstRelic(IReadOnlyList<RelicModel> relics)

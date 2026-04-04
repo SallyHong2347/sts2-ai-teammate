@@ -50,17 +50,25 @@ internal sealed class CombatActionScorer
         int selfBuffScore = ScoreSelfBuff(context, action, card);
         int resourceSetupScore = ScoreResourceSetup(context, action, card);
         int killPotentialScore = ScoreKillPotential(context, action, card);
+        ReactiveCombatPenaltyEvaluation reactivePenalty = ReactiveCombatPenaltyEvaluator.Evaluate(
+            context,
+            action,
+            card,
+            immediateDamageScore > 0 ? card.GetEstimatedDamage() : 0,
+            GetDamageHits(card),
+            context.CurrentBlock);
         int totalScore = risk.ApplyAttackWeight(immediateDamageScore) +
                          risk.ApplyDefenseWeight(immediateDefenseScore) +
                          enemyDebuffScore +
                          selfBuffScore +
                          resourceSetupScore +
                          killPotentialScore +
-                         ScoreEnergyEfficiency(context, action);
+                         ScoreEnergyEfficiency(context, action) -
+                         reactivePenalty.TotalScorePenalty;
 
         CombatActionCategory category = Classify(card, immediateDamageScore, immediateDefenseScore, selfBuffScore, resourceSetupScore);
         Log.Debug(
-            $"[AITeammate] Semantic score actionId={action.ActionId} category={category} damage={immediateDamageScore} defense={immediateDefenseScore} debuff={enemyDebuffScore} buff={selfBuffScore} setup={resourceSetupScore} kill={killPotentialScore} total={totalScore}");
+            $"[AITeammate] Semantic score actionId={action.ActionId} category={category} damage={immediateDamageScore} defense={immediateDefenseScore} debuff={enemyDebuffScore} buff={selfBuffScore} setup={resourceSetupScore} kill={killPotentialScore} retaliationPenalty={reactivePenalty.RetaliationPenalty} reactiveStatusPenalty={reactivePenalty.ReactiveStatusPenalty} reactiveCursePenalty={reactivePenalty.ReactiveCursePenalty} reactiveAfflictionPenalty={reactivePenalty.ReactiveAfflictionPenalty} reactiveDebuffPenalty={reactivePenalty.ReactiveDebuffPenalty} cardPlayPunishmentPenalty={reactivePenalty.CardPlayPunishmentPenalty} enemyReactiveBuffPenalty={reactivePenalty.EnemyReactiveBuffPenalty} reactiveUncertaintyPenalty={reactivePenalty.ReactiveUncertaintyPenalty} reactiveDamagePenalty={reactivePenalty.ReactiveDamageTaken} total={totalScore}");
 
         return new CombatActionScore
         {
@@ -313,51 +321,24 @@ internal sealed class CombatActionScorer
     private static int ScorePotion(DeterministicCombatContext context, AiLegalActionOption action)
     {
         AiPotionCombatUseWeights potionUse = context.CombatConfig.Potions.CombatUse;
-        bool isOffensivePotion = IsOffensivePotion(action);
-        bool isDefensivePotion = IsDefensivePotion(action);
+        AiCombatCoreWeights core = context.CombatConfig.Combat.CoreWeights;
+        AiCombatStatusWeights status = context.CombatConfig.Combat.StatusWeights;
+        AiCombatResourceWeights resource = context.CombatConfig.Combat.ResourceWeights;
+        AiCombatRiskProfile risk = context.CombatConfig.Combat.RiskProfile;
         bool graveDanger = IsGraveDanger(context);
-        bool canAmplifyAttacks = isOffensivePotion && CountNonPotionAttackActions(context) > 0;
-        bool isHighValueTarget = IsHighValuePotionTarget(context, action);
+        PotionCombatScoreBreakdown breakdown = BuildPotionScoreBreakdown(context, action, potionUse, core, status, resource, risk, graveDanger);
 
-        int score = context.IsEliteOrBossCombat ? potionUse.EliteBossBaseScore : potionUse.NormalFightBaseScore;
+        string targetSummary = string.IsNullOrEmpty(action.TargetId)
+            ? "none"
+            : (context.EnemiesById.TryGetValue(action.TargetId, out DeterministicEnemyState? targetEnemy)
+                ? $"{targetEnemy.Id}(hp={targetEnemy.CurrentHp},block={targetEnemy.Block},incoming={targetEnemy.IncomingDamage},attacking={targetEnemy.IsAttacking})"
+                : (context.AlliesById.TryGetValue(action.TargetId, out DeterministicAllyState? targetAlly)
+                    ? $"{targetAlly.Id}(hp={targetAlly.CurrentHp},block={targetAlly.Block},incoming={targetAlly.IncomingDamage},actor={targetAlly.IsActor})"
+                    : action.TargetId));
+        Log.Info(
+            $"[AITeammate][Potion] Score actor={context.Actor.NetId} actionId={action.ActionId} potion={breakdown.PotionId} target={targetSummary} metadata={breakdown.MetadataSource} graveDanger={graveDanger} baseScore={breakdown.BaseScore} consumptionCostPenalty={breakdown.ConsumptionCostPenalty} enemyDamageValue={breakdown.EnemyDamageValue} aoeEnemyValue={breakdown.AoeEnemyValue} lethalValue={breakdown.LethalValue} selfDamagePenalty={breakdown.SelfDamagePenalty} teammateDamagePenalty={breakdown.TeammateDamagePenalty} allyDamagePenalty={breakdown.AllyDamagePenalty} selfDebuffPenalty={breakdown.SelfDebuffPenalty} allyDebuffPenalty={breakdown.AllyDebuffPenalty} healValue={breakdown.HealValue} blockValue={breakdown.BlockValue} buffValue={breakdown.BuffValue} utilityValue={breakdown.UtilityValue} overkillPenalty={breakdown.OverkillPenalty} uncertaintyPenalty={breakdown.UncertaintyPenalty} graveDangerAdjustment={breakdown.GraveDangerAdjustment} followUpBonus={breakdown.FollowUpBonus} attackingTargetBonus={breakdown.AttackingTargetBonus} finalScore={breakdown.FinalScore}");
 
-        if (context.IsEliteOrBossCombat)
-        {
-            score += potionUse.EliteBossBonus;
-        }
-
-        if (graveDanger)
-        {
-            score += isDefensivePotion ? potionUse.GraveDangerDefensiveBonus : potionUse.GraveDangerOffensiveBonus;
-        }
-
-        if (isOffensivePotion)
-        {
-            if (context.IsEliteOrBossCombat && canAmplifyAttacks)
-            {
-                score += potionUse.EliteBossOffensiveFollowUpBonus;
-            }
-            else if (!context.IsEliteOrBossCombat && canAmplifyAttacks && isHighValueTarget)
-            {
-                score += potionUse.NormalFightOffensiveFollowUpBonus;
-            }
-        }
-
-        if (!string.IsNullOrEmpty(action.TargetId) &&
-            context.EnemiesById.TryGetValue(action.TargetId, out DeterministicEnemyState? enemy))
-        {
-            if (enemy.IsAttacking)
-            {
-                score += potionUse.AttackingTargetBonus;
-            }
-
-            if (enemy.CurrentHp + enemy.Block <= 18)
-            {
-                score -= potionUse.LowHealthTargetPenalty;
-            }
-        }
-
-        return score;
+        return breakdown.FinalScore;
     }
 
     private static int ScoreEndTurn(DeterministicCombatContext context)
@@ -368,7 +349,7 @@ internal sealed class CombatActionScorer
             return resource.EndTurnWhenSkippingPotionsBonus;
         }
 
-        return context.LegalActions.Count > 1 ? -resource.EndTurnWhileOtherActionsExistPenalty : 0;
+        return 0;
     }
 
     private static int ScoreEnergyEfficiency(DeterministicCombatContext context, AiLegalActionOption action)
@@ -495,23 +476,132 @@ internal sealed class CombatActionScorer
         return count;
     }
 
-    private static bool IsOffensivePotion(AiLegalActionOption action)
+    private static PotionCombatScoreBreakdown BuildPotionScoreBreakdown(
+        DeterministicCombatContext context,
+        AiLegalActionOption action,
+        AiPotionCombatUseWeights potionUse,
+        AiCombatCoreWeights core,
+        AiCombatStatusWeights status,
+        AiCombatResourceWeights resource,
+        AiCombatRiskProfile risk,
+        bool graveDanger)
     {
-        string potionId = action.CardId ?? string.Empty;
-        return potionId.Contains("BINDING", StringComparison.OrdinalIgnoreCase)
-               || potionId.Contains("VULNERABLE", StringComparison.OrdinalIgnoreCase)
-               || potionId.Contains("WEAK", StringComparison.OrdinalIgnoreCase)
-               || potionId.Contains("POISON", StringComparison.OrdinalIgnoreCase)
-               || potionId.Contains("FIRE", StringComparison.OrdinalIgnoreCase);
-    }
+        string potionId = action.CardId ?? "unknown";
+        bool hasMetadata = PotionMetadataRepository.Shared.TryGet(potionId, out PotionMetadata? metadata) && metadata != null;
+        PotionMetadata effectiveMetadata = metadata ?? new PotionMetadata
+        {
+            PotionId = potionId,
+            DisplayName = potionId,
+            SourceTypeName = "fallback",
+            Usage = "Unknown",
+            DeclaredTargetType = "Unknown",
+            TargetKinds = [],
+            Effects = [],
+            HasPartialUnknowns = true,
+            RequiresRuntimeResolution = true,
+            Offensive = false,
+            Defensive = false,
+            Utility = true,
+            Notes = "Potion metadata unavailable during combat scoring."
+        };
 
-    private static bool IsDefensivePotion(AiLegalActionOption action)
-    {
-        string potionId = action.CardId ?? string.Empty;
-        return potionId.Contains("BLOCK", StringComparison.OrdinalIgnoreCase)
-               || potionId.Contains("ARMOR", StringComparison.OrdinalIgnoreCase)
-               || potionId.Contains("DEXTERITY", StringComparison.OrdinalIgnoreCase)
-               || potionId.Contains("WEAK", StringComparison.OrdinalIgnoreCase);
+        PotionCombatScoreBreakdown breakdown = new()
+        {
+            PotionId = potionId,
+            MetadataSource = hasMetadata ? effectiveMetadata.SourceTypeName : "metadata-missing",
+            BaseScore = context.IsEliteOrBossCombat ? potionUse.EliteBossBaseScore + potionUse.EliteBossBonus : potionUse.NormalFightBaseScore,
+            ConsumptionCostPenalty = context.IsEliteOrBossCombat ? 10 : 18,
+            UncertaintyPenalty = GetMetadataUncertaintyPenalty(effectiveMetadata)
+        };
+
+        if (graveDanger)
+        {
+            if (effectiveMetadata.Defensive)
+            {
+                breakdown.GraveDangerAdjustment += potionUse.GraveDangerDefensiveBonus;
+            }
+            else if (effectiveMetadata.Offensive)
+            {
+                breakdown.GraveDangerAdjustment += effectiveMetadata.HarmsSelf || effectiveMetadata.HarmsTeammate || effectiveMetadata.HarmsAllAllies
+                    ? Math.Max(0, potionUse.GraveDangerOffensiveBonus / 3)
+                    : potionUse.GraveDangerOffensiveBonus;
+            }
+        }
+
+        if (effectiveMetadata.Offensive && !effectiveMetadata.HarmsSelf && !effectiveMetadata.HarmsTeammate && CountNonPotionAttackActions(context) > 0)
+        {
+            breakdown.FollowUpBonus += context.IsEliteOrBossCombat
+                ? potionUse.EliteBossOffensiveFollowUpBonus
+                : potionUse.NormalFightOffensiveFollowUpBonus;
+        }
+
+        if (!string.IsNullOrEmpty(action.TargetId) &&
+            context.EnemiesById.TryGetValue(action.TargetId, out DeterministicEnemyState? targetEnemy) &&
+            targetEnemy.IsAttacking)
+        {
+            breakdown.AttackingTargetBonus += potionUse.AttackingTargetBonus;
+        }
+        else if (effectiveMetadata.TargetKinds.Contains(PotionMetadataTargetKind.AllEnemies))
+        {
+            int attackingEnemies = context.EnemiesById.Values.Count(static enemy => enemy.IsAttacking);
+            breakdown.AttackingTargetBonus += Math.Min(attackingEnemies, 2) * Math.Max(1, potionUse.AttackingTargetBonus / 2);
+        }
+
+        foreach (PotionEffectDescriptor effect in effectiveMetadata.Effects)
+        {
+            int magnitude = ResolveEffectMagnitude(effect);
+            switch (effect.Kind)
+            {
+                case PotionEffectKind.DealDamage:
+                    ScoreDamageEffect(context, action, effect, magnitude, core, risk, breakdown);
+                    break;
+                case PotionEffectKind.Heal:
+                    breakdown.HealValue += ScoreHealingEffect(context, action, effect, magnitude, risk);
+                    break;
+                case PotionEffectKind.GainBlock:
+                    breakdown.BlockValue += ScoreBlockEffect(context, action, effect, magnitude, risk);
+                    break;
+                case PotionEffectKind.ApplyPower:
+                    ScorePowerEffect(context, action, effect, magnitude, status, breakdown);
+                    break;
+                case PotionEffectKind.GainEnergy:
+                    if (PotionEffectHitsActor(context, action, effect))
+                    {
+                        breakdown.UtilityValue += Math.Max(1, magnitude) * resource.EnergyGainValue;
+                    }
+                    break;
+                case PotionEffectKind.DrawCards:
+                    if (PotionEffectHitsActor(context, action, effect))
+                    {
+                        breakdown.UtilityValue += magnitude > 0
+                            ? magnitude * resource.DrawValueWhenPlayable
+                            : 0;
+                    }
+                    break;
+                case PotionEffectKind.GainGold:
+                    breakdown.UtilityValue += context.IsEliteOrBossCombat ? 0 : core.UtilityValueWhenSafe;
+                    break;
+                case PotionEffectKind.UpgradeCards:
+                case PotionEffectKind.AddCards:
+                case PotionEffectKind.ObtainPotion:
+                case PotionEffectKind.DiscardCards:
+                case PotionEffectKind.ManipulateDrawPile:
+                case PotionEffectKind.Utility:
+                    breakdown.UtilityValue += ScoreGenericUtilityEffect(effect, resource, core);
+                    break;
+                case PotionEffectKind.GainMaxHp:
+                    breakdown.BuffValue += Math.Max(0, magnitude) * Math.Max(1, risk.BlockedDamageValuePerPoint / 2);
+                    break;
+            }
+        }
+
+        if (effectiveMetadata.HarmsAllAllies)
+        {
+            int affectedAllies = Math.Max(1, context.AlliesById.Values.Count(static ally => !ally.IsActor));
+            breakdown.AllyDamagePenalty += affectedAllies * 12;
+        }
+
+        return breakdown;
     }
 
     private static bool IsGraveDanger(DeterministicCombatContext context)
@@ -520,21 +610,362 @@ internal sealed class CombatActionScorer
         return uncoveredDamage >= Math.Max(10, context.CurrentHp / 3) || uncoveredDamage >= context.CurrentHp;
     }
 
-    private static bool IsHighValuePotionTarget(DeterministicCombatContext context, AiLegalActionOption action)
-    {
-        if (string.IsNullOrEmpty(action.TargetId) ||
-            !context.EnemiesById.TryGetValue(action.TargetId, out DeterministicEnemyState? enemy))
-        {
-            return false;
-        }
-
-        return enemy.IsAttacking || enemy.CurrentHp + enemy.Block >= 24;
-    }
-
     private static bool ShouldPreferEndTurnOverRemainingPotions(DeterministicCombatContext context)
     {
         return context.LegalActions
             .Where(action => string.Equals(action.ActionType, AiTeammateActionKind.UsePotion.ToString(), StringComparison.Ordinal))
             .All(action => ScorePotion(context, action) <= 0);
+    }
+
+    private static bool PotionEffectHitsActor(DeterministicCombatContext context, AiLegalActionOption action, PotionEffectDescriptor effect)
+    {
+        if (effect.CanAffectSelf)
+        {
+            return true;
+        }
+
+        string actorTargetId = $"player_{context.Actor.NetId}";
+        return effect.TargetKind == PotionMetadataTargetKind.SingleAlly &&
+               string.Equals(action.TargetId, actorTargetId, StringComparison.Ordinal);
+    }
+
+    private static IEnumerable<DeterministicAllyState> GetPotionAffectedTeammates(DeterministicCombatContext context, AiLegalActionOption action, PotionEffectDescriptor effect)
+    {
+        IEnumerable<DeterministicAllyState> teammates = context.AlliesById.Values.Where(static ally => !ally.IsActor);
+        if (effect.CanAffectAllAllies)
+        {
+            return teammates;
+        }
+
+        if (effect.CanAffectTeammate)
+        {
+            return teammates.Where(ally => string.Equals(ally.Id, action.TargetId, StringComparison.Ordinal));
+        }
+
+        return [];
+    }
+
+    private static void ScoreDamageEffect(
+        DeterministicCombatContext context,
+        AiLegalActionOption action,
+        PotionEffectDescriptor effect,
+        int magnitude,
+        AiCombatCoreWeights core,
+        AiCombatRiskProfile risk,
+        PotionCombatScoreBreakdown breakdown)
+    {
+        if (magnitude <= 0)
+        {
+            return;
+        }
+
+        if (effect.CanAffectSingleEnemy && !string.IsNullOrEmpty(action.TargetId) && context.EnemiesById.TryGetValue(action.TargetId, out DeterministicEnemyState? targetEnemy))
+        {
+            ScoreEnemyDamageAgainstTarget(targetEnemy, magnitude, core, risk, breakdown, includeAoeTerm: false);
+        }
+
+        if (effect.CanAffectAllEnemies || effect.TargetKind is PotionMetadataTargetKind.AllCreatures or PotionMetadataTargetKind.AllCreaturesExceptPets)
+        {
+            int enemyIndex = 0;
+            foreach (DeterministicEnemyState enemy in context.EnemiesById.Values.OrderBy(static enemy => enemy.Id, StringComparer.Ordinal))
+            {
+                ScoreEnemyDamageAgainstTarget(enemy, magnitude, core, risk, breakdown, includeAoeTerm: enemyIndex > 0);
+                enemyIndex++;
+            }
+        }
+
+        if (PotionEffectHitsActor(context, action, effect))
+        {
+            breakdown.SelfDamagePenalty += ScoreAllyDamagePenalty(context.Actor.NetId, context.CurrentHp, context.CurrentBlock, context.IncomingDamage, magnitude, risk, isActor: true);
+        }
+
+        foreach (DeterministicAllyState ally in GetPotionAffectedTeammates(context, action, effect))
+        {
+            breakdown.TeammateDamagePenalty += ScoreAllyDamagePenalty(ally.Player.NetId, ally.CurrentHp, ally.Block, ally.IncomingDamage, magnitude, risk, isActor: false);
+        }
+    }
+
+    private static void ScoreEnemyDamageAgainstTarget(
+        DeterministicEnemyState enemy,
+        int magnitude,
+        AiCombatCoreWeights core,
+        AiCombatRiskProfile risk,
+        PotionCombatScoreBreakdown breakdown,
+        bool includeAoeTerm)
+    {
+        int effectiveHp = enemy.CurrentHp + enemy.Block;
+        int damageApplied = Math.Min(magnitude, effectiveHp);
+        int overkill = Math.Max(0, magnitude - effectiveHp);
+
+        if (includeAoeTerm)
+        {
+            breakdown.AoeEnemyValue += risk.ApplyAttackWeight(damageApplied * Math.Max(1, core.DirectDamageValuePerPoint / 2));
+        }
+        else
+        {
+            breakdown.EnemyDamageValue += risk.ApplyAttackWeight(damageApplied * core.DirectDamageValuePerPoint);
+        }
+
+        if (enemy.IsAttacking)
+        {
+            breakdown.EnemyDamageValue += core.AttackingTargetBonus;
+        }
+
+        if (magnitude >= effectiveHp)
+        {
+            breakdown.LethalValue += risk.LethalPriorityBonus + enemy.IncomingDamage * risk.LethalIncomingDamageValue;
+        }
+
+        if (overkill > 0)
+        {
+            breakdown.OverkillPenalty += overkill * Math.Max(1, core.TargetLowHealthBiasValuePerPoint);
+        }
+    }
+
+    private static int ScoreAllyDamagePenalty(ulong playerId, int hp, int block, int incomingDamage, int magnitude, AiCombatRiskProfile risk, bool isActor)
+    {
+        int healthAfterBlock = Math.Max(1, hp + block);
+        int directPenalty = risk.ApplySurvivalWeight(magnitude * risk.DamageTakenPenaltyPerPoint);
+        if (magnitude >= healthAfterBlock)
+        {
+            directPenalty += risk.LethalPriorityBonus + incomingDamage * risk.LethalIncomingDamageValue;
+        }
+        else if (hp <= Math.Max(12, incomingDamage) || magnitude >= Math.Max(1, hp / 2))
+        {
+            directPenalty += risk.LowHealthEmergencyDefenseBonus;
+        }
+
+        if (!isActor)
+        {
+            directPenalty += Math.Max(10, risk.DeadEnemyReward / 2);
+        }
+
+        return directPenalty;
+    }
+
+    private static int ScoreHealingEffect(DeterministicCombatContext context, AiLegalActionOption action, PotionEffectDescriptor effect, int magnitude, AiCombatRiskProfile risk)
+    {
+        if (magnitude <= 0)
+        {
+            return 0;
+        }
+
+        int score = 0;
+        if (PotionEffectHitsActor(context, action, effect))
+        {
+            score += ScoreHealingForActor(context.CurrentHp, context.IncomingDamage, magnitude, risk);
+        }
+
+        foreach (DeterministicAllyState ally in GetPotionAffectedTeammates(context, action, effect))
+        {
+            score += ScoreHealingForActor(ally.CurrentHp, ally.IncomingDamage, magnitude, risk);
+        }
+
+        return score;
+    }
+
+    private static int ScoreHealingForActor(int hp, int incomingDamage, int magnitude, AiCombatRiskProfile risk)
+    {
+        int urgencyMultiplier = hp <= Math.Max(12, incomingDamage) ? 2 : 1;
+        return magnitude * Math.Max(1, risk.BlockedDamageValuePerPoint) * urgencyMultiplier;
+    }
+
+    private static int ScoreBlockEffect(DeterministicCombatContext context, AiLegalActionOption action, PotionEffectDescriptor effect, int magnitude, AiCombatRiskProfile risk)
+    {
+        if (magnitude <= 0)
+        {
+            return 0;
+        }
+
+        int score = 0;
+        if (PotionEffectHitsActor(context, action, effect))
+        {
+            int prevented = Math.Min(magnitude, Math.Max(0, context.IncomingDamage - context.CurrentBlock));
+            score += risk.ApplyDefenseWeight(prevented * risk.BlockedDamageValuePerPoint);
+            if (magnitude >= Math.Max(0, context.IncomingDamage - context.CurrentBlock) && context.IncomingDamage > context.CurrentBlock)
+            {
+                score += risk.FullBlockCoverageBonus;
+            }
+        }
+
+        foreach (DeterministicAllyState ally in GetPotionAffectedTeammates(context, action, effect))
+        {
+            int prevented = Math.Min(magnitude, Math.Max(0, ally.IncomingDamage - ally.Block));
+            score += risk.ApplyDefenseWeight(prevented * Math.Max(1, risk.BlockedDamageValuePerPoint / 2));
+        }
+
+        return score;
+    }
+
+    private static void ScorePowerEffect(
+        DeterministicCombatContext context,
+        AiLegalActionOption action,
+        PotionEffectDescriptor effect,
+        int magnitude,
+        AiCombatStatusWeights status,
+        PotionCombatScoreBreakdown breakdown)
+    {
+        int stacks = Math.Max(1, magnitude);
+        if (effect.IsDebuff)
+        {
+            int penaltyPerStack = GetDebuffPenaltyPerStack(effect.AppliedPowerId, status);
+            if (PotionEffectHitsActor(context, action, effect))
+            {
+                breakdown.SelfDebuffPenalty += stacks * penaltyPerStack;
+            }
+
+            int affectedTeammates = GetPotionAffectedTeammates(context, action, effect).Count();
+            if (affectedTeammates > 0)
+            {
+                breakdown.AllyDebuffPenalty += affectedTeammates * stacks * penaltyPerStack;
+            }
+
+            if (effect.CanAffectSingleEnemy || effect.CanAffectAllEnemies)
+            {
+                breakdown.BuffValue += ScoreEnemyDebuffValue(context, effect, stacks, status);
+            }
+
+            return;
+        }
+
+        int buffPerStack = GetBuffValuePerStack(effect.AppliedPowerId, status);
+        int affectedAllies = 0;
+        if (PotionEffectHitsActor(context, action, effect))
+        {
+            affectedAllies++;
+        }
+
+        affectedAllies += GetPotionAffectedTeammates(context, action, effect).Count();
+
+        breakdown.BuffValue += Math.Max(1, affectedAllies) * stacks * buffPerStack;
+    }
+
+    private static int ScoreEnemyDebuffValue(DeterministicCombatContext context, PotionEffectDescriptor effect, int stacks, AiCombatStatusWeights status)
+    {
+        int targetCount = effect.CanAffectAllEnemies
+            ? Math.Max(1, context.EnemiesById.Count)
+            : 1;
+        int perStack = GetDebuffValuePerStack(effect.AppliedPowerId, status, context);
+        return targetCount * stacks * perStack;
+    }
+
+    private static int GetDebuffPenaltyPerStack(string? powerId, AiCombatStatusWeights status)
+    {
+        if (string.IsNullOrWhiteSpace(powerId))
+        {
+            return 12;
+        }
+
+        if (powerId.Contains("Weak", StringComparison.OrdinalIgnoreCase))
+        {
+            return status.WeakImmediateDefenseValue;
+        }
+
+        if (powerId.Contains("Vulnerable", StringComparison.OrdinalIgnoreCase))
+        {
+            return Math.Max(status.VulnerableWithoutFollowUpValue, 14);
+        }
+
+        if (powerId.Contains("Poison", StringComparison.OrdinalIgnoreCase))
+        {
+            return 18;
+        }
+
+        return 12;
+    }
+
+    private static int GetDebuffValuePerStack(string? powerId, AiCombatStatusWeights status, DeterministicCombatContext context)
+    {
+        if (string.IsNullOrWhiteSpace(powerId))
+        {
+            return 8;
+        }
+
+        if (powerId.Contains("Weak", StringComparison.OrdinalIgnoreCase))
+        {
+            return status.WeakDebuffValue;
+        }
+
+        if (powerId.Contains("Vulnerable", StringComparison.OrdinalIgnoreCase))
+        {
+            return CountNonPotionAttackActions(context) > 0 ? status.VulnerableWithFollowUpValue : status.VulnerableWithoutFollowUpValue;
+        }
+
+        if (powerId.Contains("Poison", StringComparison.OrdinalIgnoreCase))
+        {
+            return 10;
+        }
+
+        return 8;
+    }
+
+    private static int GetBuffValuePerStack(string? powerId, AiCombatStatusWeights status)
+    {
+        if (string.IsNullOrWhiteSpace(powerId))
+        {
+            return 10;
+        }
+
+        if (powerId.Contains("Strength", StringComparison.OrdinalIgnoreCase))
+        {
+            return status.PersistentStrengthMinimumValue;
+        }
+
+        if (powerId.Contains("Dexterity", StringComparison.OrdinalIgnoreCase))
+        {
+            return status.PersistentDexterityMinimumValue;
+        }
+
+        return 10;
+    }
+
+    private static int ScoreGenericUtilityEffect(PotionEffectDescriptor effect, AiCombatResourceWeights resource, AiCombatCoreWeights core)
+    {
+        return effect.MagnitudeKind switch
+        {
+            PotionMagnitudeKind.Static => core.UtilityValueWhenSafe,
+            PotionMagnitudeKind.RuntimeComputed => Math.Max(1, core.UtilityValueWhenSafe / 2),
+            PotionMagnitudeKind.ChoiceDependent => Math.Max(1, resource.SetupActionBonus),
+            PotionMagnitudeKind.Randomized => Math.Max(1, core.UtilityValueWhenThreatened / 2),
+            _ => Math.Max(1, core.UtilityValueWhenThreatened / 3)
+        };
+    }
+
+    private static int GetMetadataUncertaintyPenalty(PotionMetadata metadata)
+    {
+        int penalty = 0;
+        if (metadata.RequiresRuntimeResolution)
+        {
+            penalty += 18;
+        }
+
+        if (metadata.HasPartialUnknowns)
+        {
+            penalty += 12;
+        }
+
+        penalty += metadata.Effects.Sum(effect => effect.MagnitudeKind switch
+        {
+            PotionMagnitudeKind.RuntimeComputed => 4,
+            PotionMagnitudeKind.ChoiceDependent => 8,
+            PotionMagnitudeKind.Randomized => 10,
+            PotionMagnitudeKind.Unknown => 12,
+            _ => 0
+        });
+
+        return penalty;
+    }
+
+    private static int ResolveEffectMagnitude(PotionEffectDescriptor effect)
+    {
+        int magnitude = Math.Max(0, effect.Magnitude ?? 0);
+        return effect.MagnitudeKind switch
+        {
+            PotionMagnitudeKind.Static => magnitude,
+            PotionMagnitudeKind.RuntimeComputed => magnitude,
+            PotionMagnitudeKind.ChoiceDependent => Math.Max(0, (int)Math.Round(magnitude * 0.75d, MidpointRounding.AwayFromZero)),
+            PotionMagnitudeKind.Randomized => Math.Max(0, (int)Math.Round(magnitude * 0.60d, MidpointRounding.AwayFromZero)),
+            _ => 0
+        };
     }
 }

@@ -43,15 +43,35 @@ internal sealed class DeterministicCombatDecisionBackend : IAiDecisionBackend
             Log.Info($"[AITeammate] Combat score actor={request.ActorId} actionId={score.ActionId} category={score.Category} total={score.TotalScore}");
         }
 
+        if (bestPlan != null)
+        {
+            Log.Info($"[AITeammate] Combat line actor={request.ActorId} actions=[{string.Join(", ", bestPlan.ActionIds)}] score={bestPlan.Score} estDamage={bestPlan.EstimatedDamageDealt} estTaken={bestPlan.EstimatedDamageTaken} reactiveEstTaken={bestPlan.EstimatedReactiveDamageTaken} reactiveEstBlocked={bestPlan.EstimatedReactiveDamageBlocked} estRetainedBlock={bestPlan.EstimatedBlockAfterEnemyTurn} potionSetupScore={bestPlan.PotionSetupScore} potionFollowUpDamage={bestPlan.PotionFollowUpDamageBonus} potionFollowUpBlock={bestPlan.PotionFollowUpBlockBonus}");
+        }
+
         CombatActionScore chosen = bestPlan != null
             ? scoredActions.First(score => string.Equals(score.ActionId, bestPlan.FirstActionId, StringComparison.Ordinal))
             : scoredActions.First();
-        string reason = bestPlan != null
-            ? $"Deterministic combat line chose {chosen.Category} with score {chosen.TotalScore}. line=[{string.Join(", ", bestPlan.ActionIds)}] lineScore={bestPlan.Score} estDamage={bestPlan.EstimatedDamageDealt} estTaken={bestPlan.EstimatedDamageTaken} estRetainedBlock={bestPlan.EstimatedBlockAfterEnemyTurn}."
-            : $"Deterministic combat score chose {chosen.Category} with score {chosen.TotalScore}.";
+        string reason;
         if (bestPlan != null)
         {
-            Log.Info($"[AITeammate] Combat line actor={request.ActorId} actions=[{string.Join(", ", bestPlan.ActionIds)}] score={bestPlan.Score} estDamage={bestPlan.EstimatedDamageDealt} estTaken={bestPlan.EstimatedDamageTaken} estRetainedBlock={bestPlan.EstimatedBlockAfterEnemyTurn}");
+            CombatLineCandidateSummary? runnerUp = bestPlan.CandidateSummaries
+                .FirstOrDefault(summary => !summary.ActionIds.SequenceEqual(bestPlan.ActionIds));
+            if (runnerUp != null)
+            {
+                Log.Info(
+                    $"[AITeammate] Combat line comparison actor={request.ActorId} picked=[{string.Join(", ", bestPlan.ActionIds)}] over=[{string.Join(", ", runnerUp.ActionIds)}] pickedScore={bestPlan.Score} overScore={runnerUp.TerminalScore} pickedTaken={bestPlan.EstimatedDamageTaken} overTaken={runnerUp.EstimatedDamageTaken} pickedReactiveTaken={bestPlan.EstimatedReactiveDamageTaken} overReactiveTaken={runnerUp.EstimatedReactiveDamageTaken} pickedReactiveBlocked={bestPlan.EstimatedReactiveDamageBlocked} overReactiveBlocked={runnerUp.EstimatedReactiveDamageBlocked} pickedRetainedBlock={bestPlan.EstimatedBlockAfterEnemyTurn} overRetainedBlock={runnerUp.EstimatedBlockAfterEnemyTurn} pickedPotionSetup={bestPlan.PotionSetupScore} overPotionSetup={runnerUp.PotionSetupScore} pickedPotionFollowUpDamage={bestPlan.PotionFollowUpDamageBonus} overPotionFollowUpDamage={runnerUp.PotionFollowUpDamageBonus} pickedPotionFollowUpBlock={bestPlan.PotionFollowUpBlockBonus} overPotionFollowUpBlock={runnerUp.PotionFollowUpBlockBonus}");
+            }
+            else
+            {
+                Log.Info(
+                    $"[AITeammate] Combat line comparison actor={request.ActorId} picked=[{string.Join(", ", bestPlan.ActionIds)}] with no competing line.");
+            }
+
+            reason = $"Deterministic combat line chose {chosen.Category} with score {chosen.TotalScore}. line=[{string.Join(", ", bestPlan.ActionIds)}] lineScore={bestPlan.Score} estDamage={bestPlan.EstimatedDamageDealt} estTaken={bestPlan.EstimatedDamageTaken} reactiveEstTaken={bestPlan.EstimatedReactiveDamageTaken} reactiveEstBlocked={bestPlan.EstimatedReactiveDamageBlocked} estRetainedBlock={bestPlan.EstimatedBlockAfterEnemyTurn} potionSetupScore={bestPlan.PotionSetupScore} potionFollowUpDamage={bestPlan.PotionFollowUpDamageBonus} potionFollowUpBlock={bestPlan.PotionFollowUpBlockBonus}.";
+        }
+        else
+        {
+            reason = $"Deterministic combat score chose {chosen.Category} with score {chosen.TotalScore}.";
         }
 
         return Task.FromResult(new AiDecisionResult

@@ -28,8 +28,10 @@ internal sealed partial class AiTeammateDummyController
     private bool _isExecutingAction;
     private string? _pendingEndTurnActionId;
     private string? _pendingEndTurnActionSetFingerprint;
+    private bool _pendingEndTurnWasExplicitChoice;
     private DateTime _pendingEndTurnCommitAtUtc = DateTime.MinValue;
     private string? _lastDeduplicationKey;
+    private string? _lastRestSiteEvaluationFingerprint;
     private int _lastCompletedEndTurnRound = -1;
     private int _lastCombatRoundWithInitialStagger = -1;
     private PendingIssuedActionSettlement? _pendingIssuedActionSettlement;
@@ -112,9 +114,10 @@ internal sealed partial class AiTeammateDummyController
             {
                 _pendingEndTurnActionId = endTurnActionId;
                 _pendingEndTurnActionSetFingerprint = actionSetFingerprint;
+                _pendingEndTurnWasExplicitChoice = false;
                 _pendingEndTurnCommitAtUtc = DateTime.UtcNow + EndTurnGraceInterval;
                 _nextDecisionAtUtc = DateTime.UtcNow + IdleTickInterval;
-                Log.Info($"[AITeammate] Player={PlayerId} scheduled delayed end turn actionId={endTurnActionId} graceMs={(int)EndTurnGraceInterval.TotalMilliseconds}");
+                Log.Info($"[AITeammate] Player={PlayerId} scheduled delayed end turn actionId={endTurnActionId} explicitChoice=false graceMs={(int)EndTurnGraceInterval.TotalMilliseconds}");
             }
 
             return;
@@ -285,7 +288,7 @@ internal sealed partial class AiTeammateDummyController
         }
 
         bool hasNonEndTurnAction = decisionActions.Any(action => !IsEndTurnAction(action));
-        if (hasNonEndTurnAction)
+        if (hasNonEndTurnAction && !_pendingEndTurnWasExplicitChoice)
         {
             ClearPendingEndTurn("better_actions_available");
             return false;
@@ -300,7 +303,7 @@ internal sealed partial class AiTeammateDummyController
         string actionId = _pendingEndTurnActionId;
         string fingerprint = _pendingEndTurnActionSetFingerprint ?? actionSetFingerprint;
         ClearPendingEndTurn("commit");
-        Log.Info($"[AITeammate] Player={PlayerId} committing delayed end turn actionId={actionId}");
+        Log.Info($"[AITeammate] Player={PlayerId} committing delayed end turn actionId={actionId} explicitChoice={_pendingEndTurnWasExplicitChoice}");
         CommitResolvedAction(actionId, fingerprint, allowDelayedEndTurn: false);
         return true;
     }
@@ -333,8 +336,9 @@ internal sealed partial class AiTeammateDummyController
             {
                 _pendingEndTurnActionId = actionId;
                 _pendingEndTurnActionSetFingerprint = actionSetFingerprint;
+                _pendingEndTurnWasExplicitChoice = true;
                 _pendingEndTurnCommitAtUtc = DateTime.UtcNow + EndTurnGraceInterval;
-                Log.Info($"[AITeammate] Player={PlayerId} scheduled delayed end turn actionId={actionId} graceMs={(int)EndTurnGraceInterval.TotalMilliseconds}");
+                Log.Info($"[AITeammate] Player={PlayerId} scheduled delayed end turn actionId={actionId} explicitChoice=true graceMs={(int)EndTurnGraceInterval.TotalMilliseconds}");
             }
 
             _nextDecisionAtUtc = DateTime.UtcNow + IdleTickInterval;
@@ -359,6 +363,7 @@ internal sealed partial class AiTeammateDummyController
         Log.Info($"[AITeammate] Player={PlayerId} canceled delayed end turn actionId={_pendingEndTurnActionId} reason={reason}");
         _pendingEndTurnActionId = null;
         _pendingEndTurnActionSetFingerprint = null;
+        _pendingEndTurnWasExplicitChoice = false;
         _pendingEndTurnCommitAtUtc = DateTime.MinValue;
     }
 
