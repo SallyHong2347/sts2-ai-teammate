@@ -31,6 +31,7 @@ internal sealed partial class AiTeammateDummyController
     private bool _pendingEndTurnWasExplicitChoice;
     private DateTime _pendingEndTurnCommitAtUtc = DateTime.MinValue;
     private string? _lastDeduplicationKey;
+    private string? _lastRestSiteEvaluationFingerprint;
     private int _lastCompletedEndTurnRound = -1;
     private int _lastCombatRoundWithInitialStagger = -1;
     private PendingIssuedActionSettlement? _pendingIssuedActionSettlement;

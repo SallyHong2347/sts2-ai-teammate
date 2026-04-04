@@ -1,6 +1,8 @@
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Map;
+using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Encounters;
 using MegaCrit.Sts2.Core.Models.Events;
@@ -80,7 +82,7 @@ internal static class AiTeammateTestMapPatches
                 return false;
             }
 
-            EncounterModel? forcedEncounter = GetForcedTestMapEncounter(roomType, runState?.CurrentMapCoord);
+            EncounterModel? forcedEncounter = GetForcedTestMapEncounter(roomType, runState);
             if (forcedEncounter == null)
             {
                 return true;
@@ -114,6 +116,22 @@ internal static class AiTeammateTestMapPatches
         }
     }
 
+    [HarmonyPatch(typeof(CombatState), nameof(CombatState.CreateCreature))]
+    private static class CombatStateCreateCreaturePatch
+    {
+        private static void Postfix(CombatState __instance, CombatSide side, Creature __result)
+        {
+            RunState? runState = RunManager.Instance.DebugOnlyGetState();
+            if (side != CombatSide.Enemy || __result == null || !AiTeammateSessionRegistry.ShouldUseTestMap(runState))
+            {
+                return;
+            }
+
+            __result.SetCurrentHpInternal(1);
+            Log.Info($"[AITeammate] Clamped test-map enemy current HP creature={__result.LogName} combatId={__result.CombatId} hp=1/{__result.MaxHp}.");
+        }
+    }
+
     private static EventModel? GetForcedTestMapEvent(MapCoord? coord)
     {
         if (AiTeammateTestActMap.IsAromaOfChaosCoord(coord))
@@ -139,8 +157,15 @@ internal static class AiTeammateTestMapPatches
         return null;
     }
 
-    private static EncounterModel? GetForcedTestMapEncounter(RoomType roomType, MapCoord? coord)
+    private static EncounterModel? GetForcedTestMapEncounter(RoomType roomType, RunState? runState)
     {
+        MapCoord? coord = runState?.CurrentMapCoord;
+
+        if (roomType == RoomType.Boss && runState?.CurrentActIndex == 2)
+        {
+            return ModelDb.Encounter<QueenBoss>().ToMutable();
+        }
+
         if (roomType == RoomType.Elite && AiTeammateTestActMap.IsFirstEliteCoord(coord))
         {
             return ModelDb.Encounter<EntomancerElite>().ToMutable();

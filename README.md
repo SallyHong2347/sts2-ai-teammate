@@ -6,6 +6,12 @@ This repository is the public codebase for the mod. It is intended for players w
 
 Compatibility note: the current `beta-402` branch is updated for the Slay the Spire 2 public beta release from April 2, 2026.
 
+## Recent updates
+
+- Rest-site logic now scores `Rest`, `Smith`, and supported special options more cleanly, including `Mend`
+- Combat target generation and reactive-punishment handling have been improved for cards and potions
+- The test map now supports a fast full-run validation route and lightweight enemy HP clamping for end-to-end checks
+
 ## What the mod currently does
 
 - Adds AI-controlled teammates to a local fake-multiplayer run
