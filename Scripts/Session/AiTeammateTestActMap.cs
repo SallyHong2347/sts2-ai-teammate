@@ -98,6 +98,16 @@ internal sealed class AiTeammateTestActMap : ActMap
         return coord is { col: FakeMerchantColumn, row: BranchRow };
     }
 
+    public static bool IsFirstMonsterCoord(MapCoord? coord)
+    {
+        return coord is { col: MonsterColumn, row: 1 };
+    }
+
+    public static bool IsFirstEliteCoord(MapCoord? coord)
+    {
+        return coord is { col: EliteColumn, row: 1 };
+    }
+
     private MapPoint CreatePathPoint(int col, int row, MapPointType pointType)
     {
         MapPoint point = new(col, row)

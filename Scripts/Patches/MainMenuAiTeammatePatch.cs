@@ -85,6 +85,14 @@ public static class MainMenuAiTeammatePatch
         NMainMenuTextButton aiButton,
         NMainMenuTextButton compendiumButton)
     {
+        if (!((Node)multiplayerButton).IsInsideTree() ||
+            !((Node)aiButton).IsInsideTree() ||
+            !((Node)compendiumButton).IsInsideTree())
+        {
+            Log.Warn("[AITeammate] Skipped main menu focus wiring because one or more buttons were not yet in the scene tree.");
+            return;
+        }
+
         ((Control)aiButton).FocusNeighborTop = ((Node)multiplayerButton).GetPath();
         ((Control)aiButton).FocusNeighborBottom = ((Node)compendiumButton).GetPath();
 

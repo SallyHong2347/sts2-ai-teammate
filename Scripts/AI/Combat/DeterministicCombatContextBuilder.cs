@@ -5,6 +5,7 @@ using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.MonsterMoves.Intents;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Runs;
@@ -14,6 +15,8 @@ namespace AITeammate.Scripts;
 
 internal sealed class DeterministicCombatContextBuilder
 {
+    private readonly EnemyReactiveMetadataRepository _enemyReactiveMetadataRepository = EnemyReactiveMetadataRepository.Shared;
+
     private readonly ICardResolver _cardResolver = new CardResolver(
         CardCatalogRepository.Shared,
         new CardDefinitionRepository(),
@@ -44,18 +47,40 @@ internal sealed class DeterministicCombatContextBuilder
                 StringComparer.Ordinal);
 
         Dictionary<string, DeterministicEnemyState> enemiesById = new(StringComparer.Ordinal);
+        Dictionary<string, DeterministicAllyState> alliesById = new(StringComparer.Ordinal);
         int incomingDamage = 0;
         foreach (Creature enemy in player.Creature.CombatState.HittableEnemies)
         {
             int enemyDamage = EstimateIncomingDamage(enemy, player.Creature);
             string enemyId = GetTargetId(enemy);
+            IReadOnlyList<DeterministicEnemyReactiveState> reactiveStates = BuildReactiveStates(enemyId, enemy);
             enemiesById[enemyId] = new DeterministicEnemyState
             {
                 Id = enemyId,
                 Creature = enemy,
+                ReactiveStates = reactiveStates,
                 IncomingDamage = enemyDamage
             };
             incomingDamage += enemyDamage;
+        }
+
+        foreach (Creature ally in player.Creature.CombatState.PlayerCreatures.Where(static creature => creature.IsAlive && creature.Player != null))
+        {
+            int allyIncomingDamage = 0;
+            foreach (Creature enemy in player.Creature.CombatState.HittableEnemies)
+            {
+                allyIncomingDamage += EstimateIncomingDamage(enemy, ally);
+            }
+
+            string allyId = GetTargetId(ally);
+            alliesById[allyId] = new DeterministicAllyState
+            {
+                Id = allyId,
+                Player = ally.Player!,
+                Creature = ally,
+                IsActor = ally.Player!.NetId == player.NetId,
+                IncomingDamage = Math.Max(0, allyIncomingDamage)
+            };
         }
 
         Dictionary<string, int> actorPowerAmounts = player.Creature.Powers
@@ -67,12 +92,13 @@ internal sealed class DeterministicCombatContextBuilder
             .Select(static relic => relic.Id.Entry.ToUpperInvariant())
             .ToHashSet(StringComparer.Ordinal);
 
-        return new DeterministicCombatContext
+        DeterministicCombatContext context = new()
         {
             Actor = player,
             LegalActions = legalActions,
             HandCardsByInstanceId = handCardsByInstanceId,
             EnemiesById = enemiesById,
+            AlliesById = alliesById,
             ActorPowerAmounts = actorPowerAmounts,
             ActorRelicIds = actorRelicIds,
             CombatConfig = AiCharacterCombatConfigLoader.LoadForPlayer(player),
@@ -81,6 +107,9 @@ internal sealed class DeterministicCombatContextBuilder
             IsBossCombat = roomTypeName.Contains("Boss", StringComparison.OrdinalIgnoreCase),
             IncomingDamage = incomingDamage
         };
+
+        LogReactiveContext(context);
+        return context;
     }
 
     private static int EstimateIncomingDamage(Creature enemy, Creature target)
@@ -114,5 +143,124 @@ internal sealed class DeterministicCombatContextBuilder
         }
 
         return $"creature_{target.CombatId?.ToString() ?? target.Name.Replace(' ', '_')}";
+    }
+
+    private IReadOnlyList<DeterministicEnemyReactiveState> BuildReactiveStates(string enemyId, Creature enemy)
+    {
+        List<DeterministicEnemyReactiveState> reactiveStates = [];
+        List<string> filteredVisiblePowerIds = [];
+        foreach (PowerModel power in enemy.Powers)
+        {
+            if (!_enemyReactiveMetadataRepository.TryGet(power, out EnemyReactiveMetadata? metadata) || metadata == null)
+            {
+                if (GetSafePowerVisibility(power))
+                {
+                    filteredVisiblePowerIds.Add(power.Id.Entry);
+                }
+
+                continue;
+            }
+
+            int currentAmount = GetSafePowerAmount(power);
+            int currentDisplayAmount = GetSafePowerDisplayAmount(power, currentAmount);
+            List<DeterministicEnemyReactiveEffectEntry> effects = metadata.Effects
+                .Select(descriptor => new DeterministicEnemyReactiveEffectEntry
+                {
+                    EnemyId = enemyId,
+                    PowerId = metadata.PowerId,
+                    Descriptor = descriptor,
+                    CurrentPowerAmount = currentAmount,
+                    CurrentDisplayAmount = currentDisplayAmount
+                })
+                .ToList();
+
+            reactiveStates.Add(new DeterministicEnemyReactiveState
+            {
+                EnemyId = enemyId,
+                Power = power,
+                Metadata = metadata,
+                Effects = effects,
+                PowerId = metadata.PowerId,
+                PowerTypeName = power.GetType().FullName ?? power.GetType().Name,
+                CurrentAmount = currentAmount,
+                CurrentDisplayAmount = currentDisplayAmount,
+                IsVisible = GetSafePowerVisibility(power)
+            });
+        }
+
+        if (filteredVisiblePowerIds.Count > 0)
+        {
+            Log.Debug($"[AITeammate][ReactiveContext] enemy={enemyId} filteredVisiblePowers=[{string.Join(", ", filteredVisiblePowerIds.OrderBy(static id => id, StringComparer.Ordinal))}] retainedReactivePowers={reactiveStates.Count}");
+        }
+
+        return reactiveStates;
+    }
+
+    private static int GetSafePowerAmount(PowerModel power)
+    {
+        try
+        {
+            return power.Amount;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"[AITeammate][ReactiveContext] Failed to read Amount for power={power.Id.Entry}: {ex.Message}");
+            return 0;
+        }
+    }
+
+    private static int GetSafePowerDisplayAmount(PowerModel power, int fallbackAmount)
+    {
+        try
+        {
+            return power.DisplayAmount;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"[AITeammate][ReactiveContext] Failed to read DisplayAmount for power={power.Id.Entry}: {ex.Message}");
+            return fallbackAmount;
+        }
+    }
+
+    private static bool GetSafePowerVisibility(PowerModel power)
+    {
+        try
+        {
+            return power.IsVisible;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"[AITeammate][ReactiveContext] Failed to read IsVisible for power={power.Id.Entry}: {ex.Message}");
+            return true;
+        }
+    }
+
+    private static void LogReactiveContext(DeterministicCombatContext context)
+    {
+        int enemyCount = context.EnemiesById.Count;
+        int enemyWithReactiveCount = context.EnemiesById.Values.Count(static enemy => enemy.HasReactiveEffects);
+        int reactiveStateCount = context.EnemiesById.Values.Sum(static enemy => enemy.ReactiveStates.Count);
+        int reactiveEffectCount = context.EnemiesById.Values.Sum(enemy => enemy.ReactiveStates.Sum(static state => state.Effects.Count));
+
+        Log.Info($"[AITeammate][ReactiveContext] actor={context.Actor.NetId} enemies={enemyCount} enemiesWithReactive={enemyWithReactiveCount} reactiveStates={reactiveStateCount} reactiveEffects={reactiveEffectCount}");
+
+        foreach (DeterministicEnemyState enemy in context.EnemiesById.Values.OrderBy(static enemy => enemy.Id, StringComparer.Ordinal))
+        {
+            if (!enemy.HasReactiveEffects)
+            {
+                continue;
+            }
+
+            Log.Info($"[AITeammate][ReactiveContext] enemy={enemy.Id} name={enemy.Creature.LogName} powers={enemy.ReactiveStates.Count} hp={enemy.CurrentHp} block={enemy.Block} incoming={enemy.IncomingDamage}");
+            foreach (DeterministicEnemyReactiveState reactiveState in enemy.ReactiveStates.OrderBy(static state => state.PowerId, StringComparer.Ordinal))
+            {
+                Log.Info($"[AITeammate][ReactiveContext] enemy={enemy.Id} power={reactiveState.PowerId} amount={reactiveState.CurrentAmount} displayAmount={reactiveState.CurrentDisplayAmount} visible={reactiveState.IsVisible} metadataRuntime={reactiveState.Metadata.RequiresRuntimeResolution} metadataPartial={reactiveState.Metadata.HasPartialUnknowns} effects={reactiveState.Effects.Count}");
+                foreach (DeterministicEnemyReactiveEffectEntry effect in reactiveState.Effects)
+                {
+                    string payload = effect.AppliedPowerId ?? effect.AfflictionId ?? effect.AddedCardId ?? effect.AppliedKeyword ?? string.Empty;
+                    Log.Info($"[AITeammate][ReactiveContext] enemy={enemy.Id} power={reactiveState.PowerId} trigger={effect.TriggerKind} outcome={effect.OutcomeKind} scope={effect.TargetScope} blockability={effect.Blockability} staticMagnitude={effect.StaticMagnitude?.ToString() ?? "?"} staticKind={effect.StaticMagnitudeKind} currentAmount={effect.CurrentPowerAmount} currentDisplayAmount={effect.CurrentDisplayAmount} runtime={effect.RequiresRuntimeResolution} payload={payload}");
+                }
+            }
+        }
     }
 }
