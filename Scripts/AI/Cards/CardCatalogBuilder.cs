@@ -12,64 +12,191 @@ namespace AITeammate.Scripts;
 
 internal sealed class CardCatalogBuilder
 {
+    private const int SummaryIdLimit = 12;
+
     public CardCatalogRepository Build()
     {
         CardCatalogRepository repository = new();
-        int builtCount = 0;
-        int upgradedCount = 0;
+        List<string> partialCardIds = [];
+        List<string> failedCardIds = [];
+        int completeCount = 0;
+        int partialCount = 0;
 
         foreach (CardModel card in ModelDb.AllCards.OrderBy(static card => card.Id.Entry, StringComparer.Ordinal))
         {
-            CardCatalogEntry entry = BuildEntry(card, out bool hasUpgradeInfo);
-            repository.Upsert(entry);
-            builtCount++;
-            if (hasUpgradeInfo)
+            try
             {
-                upgradedCount++;
+                CardCatalogEntry baselineEntry = BuildBaselineEntrySafe(card);
+                CardCatalogEntry entry = TryEnrichEntry(baselineEntry, card, out bool isPartial);
+                repository.Upsert(entry);
+
+                if (isPartial)
+                {
+                    partialCount++;
+                    partialCardIds.Add(entry.CardId);
+                }
+                else
+                {
+                    completeCount++;
+                }
+            }
+            catch (Exception exception)
+            {
+                string cardId = GetCardIdSafe(card);
+                repository.MarkFailed(cardId);
+                failedCardIds.Add(cardId);
+                Log.Warn($"[AITeammate] Failed to build even baseline card catalog entry for card={cardId}: {exception}");
             }
         }
 
-        Log.Info($"[AITeammate] Built static card catalog entries={builtCount} upgraded={upgradedCount}.");
+        int totalProcessed = completeCount + partialCount + failedCardIds.Count;
+        Log.Info($"[AITeammate] Built static card catalog entries total={totalProcessed} complete={completeCount} partial={partialCount} failed={failedCardIds.Count}.");
+        LogBuildSummary("partial", partialCardIds);
+        LogBuildSummary("failed", failedCardIds);
         return repository;
     }
 
-    private static CardCatalogEntry BuildEntry(CardModel canonicalCard, out bool hasUpgradeInfo)
+    private static CardCatalogEntry BuildBaselineEntrySafe(CardModel canonicalCard)
     {
-        CardSnapshot baseSnapshot = CaptureSnapshot(canonicalCard, isUpgradePreview: false);
-        CardSnapshot? upgradedSnapshot = TryCaptureFirstUpgradeSnapshot(canonicalCard);
-        CardUpgradeSpec upgradeSpec = upgradedSnapshot != null
-            ? BuildUpgradeSpec(baseSnapshot, upgradedSnapshot)
-            : CardUpgradeSpec.Empty;
+        string cardId = GetCardIdSafe(canonicalCard);
+        IReadOnlyList<string> keywords = GetKeywordsSafe(canonicalCard);
+        IReadOnlyList<string> tags = GetTagsSafe(canonicalCard);
+        return new CardCatalogEntry
+        {
+            CardId = cardId,
+            BuildStatus = CardCatalogBuildStatus.Partial,
+            Name = GetTitleSafe(canonicalCard, cardId),
+            PoolId = string.Empty,
+            Type = GetCardTypeSafe(canonicalCard),
+            Rarity = GetCardRaritySafe(canonicalCard),
+            TargetType = GetTargetTypeSafe(canonicalCard),
+            ShouldShowInCardLibrary = false,
+            BaseCost = GetCanonicalCostSafe(canonicalCard),
+            HasXCost = GetHasXCostSafe(canonicalCard),
+            BaseDescription = string.Empty,
+            UpgradeDescriptionPreview = string.Empty,
+            Keywords = keywords,
+            Tags = tags,
+            HoverTipRefs = [],
+            MaxUpgradeLevel = 0,
+            BaseFlags = BuildFlagsFromKeywords(keywords, canonicalCard),
+            BaseDynamicVars = new Dictionary<string, int>(StringComparer.Ordinal),
+            UpgradeSpec = CardUpgradeSpec.Empty,
+            SemanticProfile = new CardSemanticProfile()
+        };
+    }
 
-        hasUpgradeInfo = upgradedSnapshot != null;
+    private static CardCatalogEntry TryEnrichEntry(CardCatalogEntry baselineEntry, CardModel canonicalCard, out bool isPartial)
+    {
+        List<string> enrichmentFailures = [];
+        string poolId = TryGetOptional(
+            () => canonicalCard.Pool.Id.Entry,
+            string.Empty,
+            canonicalCard,
+            enrichmentFailures,
+            "pool_id");
+        bool shouldShowInCardLibrary = TryGetOptional(
+            () => canonicalCard.ShouldShowInCardLibrary,
+            baselineEntry.ShouldShowInCardLibrary,
+            canonicalCard,
+            enrichmentFailures,
+            "card_library_visibility");
+
+        string baseDescription = TryGetOptional(
+            () => GetFormattedDescription(canonicalCard),
+            string.Empty,
+            canonicalCard,
+            enrichmentFailures,
+            "base_description");
+        IReadOnlyDictionary<string, int> dynamicVars = TryGetOptional(
+            () => GetDynamicVars(canonicalCard),
+            new Dictionary<string, int>(StringComparer.Ordinal),
+            canonicalCard,
+            enrichmentFailures,
+            "dynamic_vars");
+
+        CardUpgradeSpec upgradeSpec = CardUpgradeSpec.Empty;
+        string upgradeDescriptionPreview = string.Empty;
+        int maxUpgradeLevel = TryGetOptional(
+            () => canonicalCard.MaxUpgradeLevel,
+            baselineEntry.MaxUpgradeLevel,
+            canonicalCard,
+            enrichmentFailures,
+            "max_upgrade_level");
+
+        if (maxUpgradeLevel > 0)
+        {
+            CardSnapshot? upgradedSnapshot = TryCaptureFirstUpgradeSnapshot(canonicalCard, maxUpgradeLevel, enrichmentFailures);
+            if (upgradedSnapshot != null)
+            {
+                upgradeDescriptionPreview = upgradedSnapshot.Description;
+                if (!string.IsNullOrEmpty(baseDescription))
+                {
+                    IReadOnlyList<NormalizedEffectDescriptor> baseEffects = TryGetOptional(
+                        () => ExtractSemanticEffects(canonicalCard, baseDescription, dynamicVars),
+                        baselineEntry.SemanticProfile.Effects,
+                        canonicalCard,
+                        enrichmentFailures,
+                        "base_effects");
+                    upgradeSpec = BuildUpgradeSpec(new CardSnapshot
+                    {
+                        Cost = baselineEntry.BaseCost,
+                        HasXCost = baselineEntry.HasXCost,
+                        Description = baseDescription,
+                        Keywords = baselineEntry.Keywords,
+                        Tags = baselineEntry.Tags,
+                        HoverTipRefs = [],
+                        Flags = baselineEntry.BaseFlags,
+                        DynamicVars = dynamicVars,
+                        Effects = baseEffects
+                    }, upgradedSnapshot);
+                }
+            }
+        }
+
+        IReadOnlyList<NormalizedEffectDescriptor> enrichedEffects = string.IsNullOrEmpty(baseDescription)
+            ? baselineEntry.SemanticProfile.Effects
+            : TryGetOptional(
+                () => ExtractSemanticEffects(canonicalCard, baseDescription, dynamicVars),
+                baselineEntry.SemanticProfile.Effects,
+                canonicalCard,
+                enrichmentFailures,
+                "semantic_effects");
+
+        isPartial = enrichmentFailures.Count > 0;
+        if (isPartial)
+        {
+            Log.Warn($"[AITeammate] Built partial catalog entry for card={baselineEntry.CardId} optionalFailures=[{string.Join(", ", enrichmentFailures)}]");
+        }
 
         CardCatalogEntry entry = new()
         {
-            CardId = canonicalCard.Id.Entry,
-            Name = canonicalCard.Title,
-            PoolId = canonicalCard.Pool.Id.Entry,
-            Type = canonicalCard.Type,
-            Rarity = canonicalCard.Rarity.ToString(),
-            TargetType = canonicalCard.TargetType,
-            ShouldShowInCardLibrary = canonicalCard.ShouldShowInCardLibrary,
-            BaseCost = baseSnapshot.Cost,
-            HasXCost = baseSnapshot.HasXCost,
-            BaseDescription = baseSnapshot.Description,
-            UpgradeDescriptionPreview = upgradedSnapshot?.Description ?? string.Empty,
-            Keywords = baseSnapshot.Keywords,
-            Tags = baseSnapshot.Tags,
-            HoverTipRefs = baseSnapshot.HoverTipRefs,
-            MaxUpgradeLevel = canonicalCard.MaxUpgradeLevel,
-            BaseFlags = baseSnapshot.Flags,
-            BaseDynamicVars = baseSnapshot.DynamicVars,
+            CardId = baselineEntry.CardId,
+            BuildStatus = isPartial ? CardCatalogBuildStatus.Partial : CardCatalogBuildStatus.Complete,
+            Name = baselineEntry.Name,
+            PoolId = poolId,
+            Type = baselineEntry.Type,
+            Rarity = baselineEntry.Rarity,
+            TargetType = baselineEntry.TargetType,
+            ShouldShowInCardLibrary = shouldShowInCardLibrary,
+            BaseCost = baselineEntry.BaseCost,
+            HasXCost = baselineEntry.HasXCost,
+            BaseDescription = baseDescription,
+            UpgradeDescriptionPreview = upgradeDescriptionPreview,
+            Keywords = baselineEntry.Keywords,
+            Tags = baselineEntry.Tags,
+            HoverTipRefs = [],
+            MaxUpgradeLevel = maxUpgradeLevel,
+            BaseFlags = baselineEntry.BaseFlags,
+            BaseDynamicVars = dynamicVars,
             UpgradeSpec = upgradeSpec,
             SemanticProfile = new CardSemanticProfile
             {
-                Effects = baseSnapshot.Effects
+                Effects = enrichedEffects
             }
         };
 
-        Log.Debug($"[AITeammate] Catalog card built id={entry.CardId} upgraded={(hasUpgradeInfo ? "yes" : "no")} effects=[{string.Join(", ", entry.SemanticProfile.Effects.Select(static effect => effect.Describe()))}]");
+        Log.Debug($"[AITeammate] Catalog card built id={entry.CardId} status={entry.BuildStatus} effects=[{string.Join(", ", entry.SemanticProfile.Effects.Select(static effect => effect.Describe()))}]");
         return entry;
     }
 
@@ -80,7 +207,6 @@ internal sealed class CardCatalogBuilder
             : GetFormattedDescription(card);
         IReadOnlyDictionary<string, int> dynamicVars = GetDynamicVars(card);
         CardFlags flags = GetFlags(card);
-        IReadOnlyList<HoverTipRef> hoverTipRefs = GetHoverTipRefs(card);
         IReadOnlyList<NormalizedEffectDescriptor> effects = ExtractSemanticEffects(card, description, dynamicVars);
 
         return new CardSnapshot
@@ -90,24 +216,33 @@ internal sealed class CardCatalogBuilder
             Description = description,
             Keywords = card.Keywords.Select(static keyword => keyword.ToString()).OrderBy(static keyword => keyword, StringComparer.Ordinal).ToArray(),
             Tags = card.Tags.Select(static tag => tag.ToString()).OrderBy(static tag => tag, StringComparer.Ordinal).ToArray(),
-            HoverTipRefs = hoverTipRefs,
+            HoverTipRefs = [],
             Flags = flags,
             DynamicVars = dynamicVars,
             Effects = effects
         };
     }
 
-    private static CardSnapshot? TryCaptureFirstUpgradeSnapshot(CardModel canonicalCard)
+    private static CardSnapshot? TryCaptureFirstUpgradeSnapshot(CardModel canonicalCard, int maxUpgradeLevel, List<string> enrichmentFailures)
     {
-        if (canonicalCard.MaxUpgradeLevel <= 0)
+        if (maxUpgradeLevel <= 0)
         {
             return null;
         }
 
-        CardModel upgraded = canonicalCard.ToMutable();
-        upgraded.UpgradeInternal();
-        upgraded.FinalizeUpgradeInternal();
-        return CaptureSnapshot(upgraded, isUpgradePreview: true);
+        try
+        {
+            CardModel upgraded = canonicalCard.ToMutable();
+            upgraded.UpgradeInternal();
+            upgraded.FinalizeUpgradeInternal();
+            return CaptureSnapshot(upgraded, isUpgradePreview: true);
+        }
+        catch (Exception exception)
+        {
+            enrichmentFailures.Add($"upgrade_snapshot:{exception.GetType().Name}");
+            Log.Warn($"[AITeammate] Skipping upgrade snapshot for card={canonicalCard.Id.Entry}: {exception}");
+            return null;
+        }
     }
 
     private static CardUpgradeSpec BuildUpgradeSpec(CardSnapshot baseSnapshot, CardSnapshot upgradedSnapshot)
@@ -168,37 +303,180 @@ internal sealed class CardCatalogBuilder
     private static CardFlags GetFlags(CardModel card)
     {
         IReadOnlySet<CardKeyword> keywords = card.Keywords;
+        return BuildFlagsFromKeywords(keywords.Select(static keyword => keyword.ToString()).ToArray(), card);
+    }
+
+    private static CardFlags BuildFlagsFromKeywords(IReadOnlyList<string> keywords, CardModel card)
+    {
+        HashSet<string> keywordSet = keywords.ToHashSet(StringComparer.Ordinal);
         return new CardFlags
         {
-            Exhaust = keywords.Contains(CardKeyword.Exhaust),
-            Ethereal = keywords.Contains(CardKeyword.Ethereal),
-            Retain = keywords.Contains(CardKeyword.Retain),
-            Innate = keywords.Contains(CardKeyword.Innate),
-            Unplayable = keywords.Contains(CardKeyword.Unplayable),
-            ReplayCount = Math.Max(card.BaseReplayCount, 0)
+            Exhaust = keywordSet.Contains(CardKeyword.Exhaust.ToString()),
+            Ethereal = keywordSet.Contains(CardKeyword.Ethereal.ToString()),
+            Retain = keywordSet.Contains(CardKeyword.Retain.ToString()),
+            Innate = keywordSet.Contains(CardKeyword.Innate.ToString()),
+            Unplayable = keywordSet.Contains(CardKeyword.Unplayable.ToString()),
+            ReplayCount = GetReplayCountSafe(card)
         };
     }
 
-    private static IReadOnlyList<HoverTipRef> GetHoverTipRefs(CardModel card)
+    private static T TryGetOptional<T>(
+        Func<T> getter,
+        T fallback,
+        CardModel card,
+        List<string> enrichmentFailures,
+        string label)
     {
-        List<HoverTipRef> refs = [];
-        foreach (IHoverTip tip in card.HoverTips)
+        try
         {
-            string refId = tip.CanonicalModel?.Id.Entry
-                           ?? tip.Id
-                           ?? GetHoverTipTitle(tip)
-                           ?? GetHoverTipDescription(tip)
-                           ?? "unknown";
-            refs.Add(new HoverTipRef
-            {
-                Kind = GetHoverTipKind(tip),
-                RefId = refId,
-                Title = GetHoverTipTitle(tip),
-                Description = GetHoverTipDescription(tip)
-            });
+            return getter();
+        }
+        catch (Exception exception)
+        {
+            enrichmentFailures.Add($"{label}:{exception.GetType().Name}");
+            Log.Warn($"[AITeammate] Optional card metadata failed card={GetCardIdSafe(card)} field={label}: {exception}");
+            return fallback;
+        }
+    }
+
+    private static string GetCardIdSafe(CardModel card)
+    {
+        try
+        {
+            return string.IsNullOrWhiteSpace(card.Id.Entry)
+                ? card.GetType().Name
+                : card.Id.Entry;
+        }
+        catch
+        {
+            return card.GetType().Name;
+        }
+    }
+
+    private static string GetTitleSafe(CardModel card, string fallback)
+    {
+        try
+        {
+            return string.IsNullOrWhiteSpace(card.Title) ? fallback : card.Title;
+        }
+        catch
+        {
+            return fallback;
+        }
+    }
+
+    private static CardType GetCardTypeSafe(CardModel card)
+    {
+        try
+        {
+            return card.Type;
+        }
+        catch
+        {
+            return CardType.Status;
+        }
+    }
+
+    private static string GetCardRaritySafe(CardModel card)
+    {
+        try
+        {
+            return card.Rarity.ToString();
+        }
+        catch
+        {
+            return "Unknown";
+        }
+    }
+
+    private static TargetType GetTargetTypeSafe(CardModel card)
+    {
+        try
+        {
+            return card.TargetType;
+        }
+        catch
+        {
+            return TargetType.None;
+        }
+    }
+
+    private static int GetCanonicalCostSafe(CardModel card)
+    {
+        try
+        {
+            return card.EnergyCost.Canonical;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private static bool GetHasXCostSafe(CardModel card)
+    {
+        try
+        {
+            return card.EnergyCost.CostsX;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static IReadOnlyList<string> GetKeywordsSafe(CardModel card)
+    {
+        try
+        {
+            return card.Keywords
+                .Select(static keyword => keyword.ToString())
+                .OrderBy(static keyword => keyword, StringComparer.Ordinal)
+                .ToArray();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static IReadOnlyList<string> GetTagsSafe(CardModel card)
+    {
+        try
+        {
+            return card.Tags
+                .Select(static tag => tag.ToString())
+                .OrderBy(static tag => tag, StringComparer.Ordinal)
+                .ToArray();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static int GetReplayCountSafe(CardModel card)
+    {
+        try
+        {
+            return Math.Max(card.BaseReplayCount, 0);
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private static void LogBuildSummary(string label, IReadOnlyList<string> cardIds)
+    {
+        if (cardIds.Count == 0)
+        {
+            return;
         }
 
-        return refs;
+        string sample = string.Join(", ", cardIds.Take(SummaryIdLimit));
+        string suffix = cardIds.Count > SummaryIdLimit ? ", ..." : string.Empty;
+        Log.Info($"[AITeammate] Card catalog {label} ids=[{sample}{suffix}]");
     }
 
     private static HoverTipRefKind GetHoverTipKind(IHoverTip tip)

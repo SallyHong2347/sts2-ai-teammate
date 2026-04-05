@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Entities.Actions;
@@ -16,6 +17,14 @@ namespace AITeammate.Scripts;
 
 internal sealed partial class AiTeammateDummyController
 {
+    private static readonly FieldInfo? ActionQueuesField =
+        typeof(ActionQueueSet).GetField("_actionQueues", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly Type? ActionQueueType =
+        typeof(ActionQueueSet).GetNestedType("ActionQueue", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo? ActionQueueOwnerIdField =
+        ActionQueueType?.GetField("ownerId", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+    private static readonly FieldInfo? ActionQueueActionsField =
+        ActionQueueType?.GetField("actions", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
     private static readonly IAiDecisionBackend DecisionBackend = AiDecisionBackendFactory.CreateDefault();
     private static readonly TimeSpan IdleTickInterval = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan EndTurnGraceInterval = TimeSpan.FromMilliseconds(400);
@@ -558,6 +567,12 @@ internal sealed partial class AiTeammateDummyController
 
     private bool IsQueueSettledForReplan(PendingIssuedActionSettlement settlement)
     {
+        if (TryGetOwnedQueuedPlayerDrivenAction(out GameAction? queuedAction))
+        {
+            Log.Debug($"[AITeammate] Player={PlayerId} queue not yet settled for actionId={settlement.ActionId}; ownedQueuedAction={DescribeTrackedAction(queuedAction!)}");
+            return false;
+        }
+
         GameAction? runningAction = RunManager.Instance.ActionExecutor.CurrentlyRunningAction;
         if (runningAction != null &&
             ActionQueueSet.IsGameActionPlayerDriven(runningAction) &&
@@ -576,6 +591,54 @@ internal sealed partial class AiTeammateDummyController
 
         Log.Debug($"[AITeammate] Player={PlayerId} treating queue as settled for actionId={settlement.ActionId}; runningOwner={runningAction?.OwnerId.ToString() ?? "none"} readyOwner={readyAction?.OwnerId.ToString() ?? "none"}");
         return true;
+    }
+
+    private bool TryGetOwnedQueuedPlayerDrivenAction(out GameAction? queuedAction)
+    {
+        queuedAction = null;
+        if (ActionQueuesField?.GetValue(RunManager.Instance.ActionQueueSet) is not System.Collections.IEnumerable queues)
+        {
+            return false;
+        }
+
+        foreach (object? queue in queues)
+        {
+            if (queue == null)
+            {
+                continue;
+            }
+
+            if (ActionQueueOwnerIdField?.GetValue(queue) is not ulong ownerId || ownerId != PlayerId)
+            {
+                continue;
+            }
+
+            if (ActionQueueActionsField?.GetValue(queue) is not System.Collections.IEnumerable actions)
+            {
+                return false;
+            }
+
+            foreach (object? queued in actions)
+            {
+                if (queued is not GameAction candidate ||
+                    !ActionQueueSet.IsGameActionPlayerDriven(candidate))
+                {
+                    continue;
+                }
+
+                if (candidate.State is GameActionState.Canceled or GameActionState.Finished)
+                {
+                    continue;
+                }
+
+                queuedAction = candidate;
+                return true;
+            }
+
+            return false;
+        }
+
+        return false;
     }
 
     private static string DescribeTrackedAction(GameAction action)

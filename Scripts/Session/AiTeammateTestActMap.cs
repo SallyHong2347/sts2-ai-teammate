@@ -5,7 +5,7 @@ namespace AITeammate.Scripts;
 internal sealed class AiTeammateTestActMap : ActMap
 {
     private const int GridWidth = 9;
-    private const int GridHeight = 1;
+    private const int GridHeight = 6;
     private const int PathColumn = 4;
 
     protected override MapPoint?[,] Grid { get; }
@@ -20,10 +20,21 @@ internal sealed class AiTeammateTestActMap : ActMap
         StartingMapPoint = CreateSpecialPoint(PathColumn, 0, MapPointType.Ancient);
         BossMapPoint = CreateSpecialPoint(PathColumn, GridHeight + 1, MapPointType.Boss);
 
-        MapPoint monster = CreatePathPoint(PathColumn, 1, MapPointType.Monster);
-        StartingMapPoint.AddChildPoint(monster);
-        monster.AddChildPoint(BossMapPoint);
-        startMapPoints.Add(monster);
+        MapPoint firstMonster = CreatePathPoint(PathColumn, 1, MapPointType.Monster);
+        MapPoint secondMonster = CreatePathPoint(PathColumn, 2, MapPointType.Monster);
+        MapPoint firstRestSite = CreatePathPoint(PathColumn, 3, MapPointType.RestSite);
+        MapPoint thirdMonster = CreatePathPoint(PathColumn, 4, MapPointType.Monster);
+        MapPoint fourthMonster = CreatePathPoint(PathColumn, 5, MapPointType.Monster);
+        MapPoint secondRestSite = CreatePathPoint(PathColumn, 6, MapPointType.RestSite);
+
+        StartingMapPoint.AddChildPoint(firstMonster);
+        firstMonster.AddChildPoint(secondMonster);
+        secondMonster.AddChildPoint(firstRestSite);
+        firstRestSite.AddChildPoint(thirdMonster);
+        thirdMonster.AddChildPoint(fourthMonster);
+        fourthMonster.AddChildPoint(secondRestSite);
+        secondRestSite.AddChildPoint(BossMapPoint);
+        startMapPoints.Add(firstMonster);
     }
 
     public static bool IsAromaOfChaosCoord(MapCoord? coord)
@@ -49,6 +60,21 @@ internal sealed class AiTeammateTestActMap : ActMap
     public static bool IsFirstMonsterCoord(MapCoord? coord)
     {
         return coord is { col: PathColumn, row: 1 };
+    }
+
+    public static bool IsSecondMonsterCoord(MapCoord? coord)
+    {
+        return coord is { col: PathColumn, row: 2 };
+    }
+
+    public static bool IsThirdMonsterCoord(MapCoord? coord)
+    {
+        return coord is { col: PathColumn, row: 4 };
+    }
+
+    public static bool IsFourthMonsterCoord(MapCoord? coord)
+    {
+        return coord is { col: PathColumn, row: 5 };
     }
 
     public static bool IsFirstEliteCoord(MapCoord? coord)

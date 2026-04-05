@@ -6,6 +6,7 @@ using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Encounters;
 using MegaCrit.Sts2.Core.Models.Events;
+using MegaCrit.Sts2.Core.Models.Cards;
 using MegaCrit.Sts2.Core.Models.Potions;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
@@ -14,6 +15,7 @@ namespace AITeammate.Scripts;
 
 internal static class AiTeammateTestMapPatches
 {
+    private const int TargetInitialOverclockCopies = 3;
     private static readonly Func<PotionModel>[] TestMapPotionFactories =
     [
         static () => ModelDb.Potion<VulnerablePotion>().ToMutable(),
@@ -112,23 +114,10 @@ internal static class AiTeammateTestMapPatches
                 player.Gold = TestMapStartingGold;
                 Log.Info($"[AITeammate] Seeded test-map starting gold player={player.NetId} gold={TestMapStartingGold}");
                 SeedTestMapPotions(player);
-            }
-        }
-    }
-
-    [HarmonyPatch(typeof(CombatState), nameof(CombatState.CreateCreature))]
-    private static class CombatStateCreateCreaturePatch
-    {
-        private static void Postfix(CombatState __instance, CombatSide side, Creature __result)
-        {
-            RunState? runState = RunManager.Instance.DebugOnlyGetState();
-            if (side != CombatSide.Enemy || __result == null || !AiTeammateSessionRegistry.ShouldUseTestMap(runState))
-            {
-                return;
+                SeedTestMapOverclockDeck(player);
             }
 
-            __result.SetCurrentHpInternal(1);
-            Log.Info($"[AITeammate] Clamped test-map enemy current HP creature={__result.LogName} combatId={__result.CombatId} hp=1/{__result.MaxHp}.");
+            LogTestCardLibraryInitialization();
         }
     }
 
@@ -176,6 +165,14 @@ internal static class AiTeammateTestMapPatches
             return ModelDb.Encounter<ToadpolesWeak>().ToMutable();
         }
 
+        if (roomType == RoomType.Monster &&
+            (AiTeammateTestActMap.IsSecondMonsterCoord(coord) ||
+             AiTeammateTestActMap.IsThirdMonsterCoord(coord) ||
+             AiTeammateTestActMap.IsFourthMonsterCoord(coord)))
+        {
+            return ModelDb.Encounter<ToadpolesWeak>().ToMutable();
+        }
+
         return null;
     }
 
@@ -203,5 +200,50 @@ internal static class AiTeammateTestMapPatches
 
         string potionSummary = string.Join(", ", player.PotionSlots.Select(static potion => potion?.Id.Entry ?? "empty"));
         Log.Info($"[AITeammate] Seeded test-map potion belt player={player.NetId} added={added} slots={player.MaxPotionCount} potions=[{potionSummary}]");
+    }
+
+    private static void SeedTestMapOverclockDeck(MegaCrit.Sts2.Core.Entities.Players.Player player)
+    {
+        int existingCopies = player.Deck.Cards.Count(static card => card is Overclock);
+        int addedCopies = 0;
+        for (int copyIndex = existingCopies; copyIndex < TargetInitialOverclockCopies; copyIndex++)
+        {
+            CardModel overclock = ModelDb.Card<Overclock>().ToMutable();
+            overclock.FloorAddedToDeck = 1;
+            player.RunState.AddCard(overclock, player);
+            player.Deck.AddInternal(overclock, -1, silent: true);
+            overclock.AfterCreated();
+            addedCopies++;
+        }
+
+        string deckSummary = string.Join(", ", player.Deck.Cards.Select(static card => card.Id.Entry));
+        Log.Info($"[AITeammate] Seeded test-map deck player={player.NetId} overclockCopies={player.Deck.Cards.Count(static card => card is Overclock)} added={addedCopies} deckCount={player.Deck.Cards.Count} deck=[{deckSummary}]");
+    }
+
+    private static void LogTestCardLibraryInitialization()
+    {
+        try
+        {
+            CardCatalogRepository repository = CardCatalogRepository.Shared;
+            string overclockId = ModelDb.Card<Overclock>().Id.Entry;
+            string burnId = ModelDb.Card<Burn>().Id.Entry;
+
+            bool hasOverclockEntry = repository.TryGet(overclockId, out CardCatalogEntry? overclockEntry) && overclockEntry != null;
+            bool hasBurnEntry = repository.TryGet(burnId, out CardCatalogEntry? burnEntry) && burnEntry != null;
+            bool hasOverclockStatus = repository.TryGetStatus(overclockId, out CardCatalogBuildStatus overclockStatus);
+            bool hasBurnStatus = repository.TryGetStatus(burnId, out CardCatalogBuildStatus burnStatus);
+
+            Log.Info(
+                $"[AITeammate] Test card library initialization completed repositoryEntries={repository.Count} " +
+                $"overclockStatus={(hasOverclockStatus ? overclockStatus : CardCatalogBuildStatus.Failed)} " +
+                $"overclockEntry={(hasOverclockEntry ? "present" : "missing")} " +
+                $"burnStatus={(hasBurnStatus ? burnStatus : CardCatalogBuildStatus.Failed)} " +
+                $"burnEntry={(hasBurnEntry ? "present" : "missing")}.");
+        }
+        catch (Exception exception)
+        {
+            Log.Warn($"[AITeammate] Test card library initialization probe failed: {exception.GetType().Name}: {exception.Message}");
+            throw;
+        }
     }
 }
