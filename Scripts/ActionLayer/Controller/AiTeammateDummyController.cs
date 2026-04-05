@@ -21,8 +21,6 @@ internal sealed partial class AiTeammateDummyController
         typeof(ActionQueueSet).GetField("_actionQueues", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly Type? ActionQueueType =
         typeof(ActionQueueSet).GetNestedType("ActionQueue", BindingFlags.Instance | BindingFlags.NonPublic);
-    private static readonly FieldInfo? ActionQueueOwnerIdField =
-        ActionQueueType?.GetField("ownerId", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
     private static readonly FieldInfo? ActionQueueActionsField =
         ActionQueueType?.GetField("actions", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
     private static readonly IAiDecisionBackend DecisionBackend = AiDecisionBackendFactory.CreateDefault();
@@ -567,29 +565,27 @@ internal sealed partial class AiTeammateDummyController
 
     private bool IsQueueSettledForReplan(PendingIssuedActionSettlement settlement)
     {
-        if (TryGetOwnedQueuedPlayerDrivenAction(out GameAction? queuedAction))
-        {
-            Log.Debug($"[AITeammate] Player={PlayerId} queue not yet settled for actionId={settlement.ActionId}; ownedQueuedAction={DescribeTrackedAction(queuedAction!)}");
-            return false;
-        }
-
+        // Block while our own player-driven action is still executing.
         GameAction? runningAction = RunManager.Instance.ActionExecutor.CurrentlyRunningAction;
         if (runningAction != null &&
             ActionQueueSet.IsGameActionPlayerDriven(runningAction) &&
             runningAction.OwnerId == PlayerId)
         {
+            Log.Debug($"[AITeammate] Player={PlayerId} queue not settled for actionId={settlement.ActionId}; own running action={DescribeTrackedAction(runningAction)}");
             return false;
         }
 
-        GameAction? readyAction = RunManager.Instance.ActionQueueSet.GetReadyAction();
-        if (readyAction != null &&
-            ActionQueueSet.IsGameActionPlayerDriven(readyAction) &&
-            readyAction.OwnerId == PlayerId)
+        // Block while our player's queue has any player-driven actions still active.
+        // Uses direct reflection instead of ActionQueueSet.GetReadyAction() because
+        // GetReadyAction() throws InvalidOperationException when it encounters an action
+        // in Executing state (e.g. after ActionSettleTimeout fires while a card is still running).
+        if (TryGetOwnedQueuedPlayerDrivenAction(out GameAction? queuedAction))
         {
+            Log.Debug($"[AITeammate] Player={PlayerId} queue not settled for actionId={settlement.ActionId}; owned queued action={DescribeTrackedAction(queuedAction!)}");
             return false;
         }
 
-        Log.Debug($"[AITeammate] Player={PlayerId} treating queue as settled for actionId={settlement.ActionId}; runningOwner={runningAction?.OwnerId.ToString() ?? "none"} readyOwner={readyAction?.OwnerId.ToString() ?? "none"}");
+        Log.Debug($"[AITeammate] Player={PlayerId} treating queue as settled for actionId={settlement.ActionId}; runningOwner={runningAction?.OwnerId.ToString() ?? "none"}");
         return true;
     }
 
@@ -608,20 +604,24 @@ internal sealed partial class AiTeammateDummyController
                 continue;
             }
 
-            if (ActionQueueOwnerIdField?.GetValue(queue) is not ulong ownerId || ownerId != PlayerId)
+            if (ActionQueueActionsField?.GetValue(queue) is not System.Collections.IEnumerable actions)
             {
                 continue;
             }
 
-            if (ActionQueueActionsField?.GetValue(queue) is not System.Collections.IEnumerable actions)
+            foreach (object? item in actions)
             {
-                return false;
-            }
+                if (item is not GameAction candidate)
+                {
+                    continue;
+                }
 
-            foreach (object? queued in actions)
-            {
-                if (queued is not GameAction candidate ||
-                    !ActionQueueSet.IsGameActionPlayerDriven(candidate))
+                if (candidate.OwnerId != PlayerId)
+                {
+                    continue;
+                }
+
+                if (!ActionQueueSet.IsGameActionPlayerDriven(candidate))
                 {
                     continue;
                 }
@@ -634,8 +634,6 @@ internal sealed partial class AiTeammateDummyController
                 queuedAction = candidate;
                 return true;
             }
-
-            return false;
         }
 
         return false;

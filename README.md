@@ -8,6 +8,8 @@ Compatibility note: the current `beta-402` branch is updated for the Slay the Sp
 
 ## Recent updates
 
+- Card catalog initialization is now more robust around special cards, with safer fallback handling for card info
+- A combat action-queue error that could surface while AI teammates played cards such as `Overclock` has been fixed
 - Rest-site logic now scores `Rest`, `Smith`, and supported special options more cleanly, including `Mend`
 - Combat target generation and reactive-punishment handling have been improved for cards and potions
 - Potion scoring and same-turn potion follow-up planning have been improved, including better mixed-effect evaluation
