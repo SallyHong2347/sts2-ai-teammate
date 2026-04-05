@@ -2,13 +2,14 @@
 
 This mod keeps one shared AI implementation and changes personality through per-character config files.
 
-The release config surface now has five main areas:
+The release config surface now has six main areas:
 
 - `combat`
 - `cardRewards`
 - `potions`
 - `shop`
 - `events`
+- `timing`
 
 ## Where the files live
 
@@ -40,14 +41,15 @@ If a file is missing, malformed, or only partially filled out, the loader logs a
 
 ```json
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "characterId": "ironclad",
   "displayName": "Ironclad",
   "combat": {},
   "cardRewards": {},
   "potions": {},
   "shop": {},
-  "events": {}
+  "events": {},
+  "timing": {}
 }
 ```
 
@@ -198,6 +200,32 @@ Also configurable:
 - `lethalOptionPenalty`
 
 Together, these control how willing the AI is to trade life for value, accept curses, take high-variance event outcomes, or accept options that lead into combat.
+
+## Timing config
+
+`timing` controls how fast the AI plays cards and takes actions during combat.
+
+### `timing.actionIntervalMs`
+
+Extra delay in milliseconds added after each AI action settles before the AI starts planning its next action.
+
+- Type: `int`
+- Default: `0`
+- Range: `0` to `2000`
+
+At `0` (default), the AI plays at its natural speed. Setting this to `300`-`600` makes the AI feel more deliberate and easier to follow. Higher values make the AI wait longer between each card play or potion use.
+
+This delay is applied after the card animation and settlement complete, so it stacks on top of the game's own animation timing.
+
+Example: slow the AI down for one character:
+
+```json
+{
+  "timing": {
+    "actionIntervalMs": 400
+  }
+}
+```
 
 ## What is now configurable
 

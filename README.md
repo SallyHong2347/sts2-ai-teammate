@@ -8,6 +8,9 @@ Compatibility note: the current `beta-402` branch is updated for the Slay the Sp
 
 ## Recent updates
 
+- Exposed `lowHealthEmergencyThreshold`, `graveDangerFloor`, `graveDangerHpFraction` in combat risk profile and `allyDamagePenaltyPerAlly` in potion combat config
+- Added configurable `timing.actionIntervalMs` to control the delay between AI card plays (default 0, range 0-2000ms)
+- Doubled action settlement and queue settlement timeouts for better handling of long card animations
 - Card catalog initialization is now more robust around special cards, with safer fallback handling for card info
 - A combat action-queue error that could surface while AI teammates played cards such as `Overclock` has been fixed
 - Rest-site logic now scores `Rest`, `Smith`, and supported special options more cleanly, including `Mend`
@@ -66,10 +69,12 @@ The current config surface covers:
 - potion heuristics
 - shop valuation
 - event valuation
+- timing / pacing (action interval between card plays)
 
 See:
 
-- [AI behavior config](docs/ai-behavior-config.md)
+- [AI config parameters guide](docs/ai-config-parameters.md) - explains every parameter from a player's perspective
+- [AI behavior config](docs/ai-behavior-config.md) - technical config structure and fallback behavior
 - [AI behavior preset ideas](docs/ai-behavior-presets.md)
 
 ## Build and run basics

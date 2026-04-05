@@ -331,6 +331,7 @@ internal sealed class AiPotionCombatUseWeights
     public required int NormalFightOffensiveFollowUpBonus { get; init; }
     public required int AttackingTargetBonus { get; init; }
     public required int LowHealthTargetPenalty { get; init; }
+    public required int AllyDamagePenaltyPerAlly { get; init; }
 
     public static AiPotionCombatUseWeights CreateDefault()
     {
@@ -344,7 +345,8 @@ internal sealed class AiPotionCombatUseWeights
             EliteBossOffensiveFollowUpBonus = 95,
             NormalFightOffensiveFollowUpBonus = 25,
             AttackingTargetBonus = 8,
-            LowHealthTargetPenalty = 18
+            LowHealthTargetPenalty = 18,
+            AllyDamagePenaltyPerAlly = 12
         };
     }
 
@@ -360,7 +362,8 @@ internal sealed class AiPotionCombatUseWeights
             EliteBossOffensiveFollowUpBonus = AiCombatCoreWeights.ClampInt(overrides?.EliteBossOffensiveFollowUpBonus, EliteBossOffensiveFollowUpBonus, 0, 300),
             NormalFightOffensiveFollowUpBonus = AiCombatCoreWeights.ClampInt(overrides?.NormalFightOffensiveFollowUpBonus, NormalFightOffensiveFollowUpBonus, 0, 200),
             AttackingTargetBonus = AiCombatCoreWeights.ClampInt(overrides?.AttackingTargetBonus, AttackingTargetBonus, 0, 100),
-            LowHealthTargetPenalty = AiCombatCoreWeights.ClampInt(overrides?.LowHealthTargetPenalty, LowHealthTargetPenalty, 0, 100)
+            LowHealthTargetPenalty = AiCombatCoreWeights.ClampInt(overrides?.LowHealthTargetPenalty, LowHealthTargetPenalty, 0, 100),
+            AllyDamagePenaltyPerAlly = AiCombatCoreWeights.ClampInt(overrides?.AllyDamagePenaltyPerAlly, AllyDamagePenaltyPerAlly, 0, 100)
         };
     }
 }
@@ -562,6 +565,7 @@ internal sealed class AiPotionCombatUseWeightsOverrides
     public int? NormalFightOffensiveFollowUpBonus { get; set; }
     public int? AttackingTargetBonus { get; set; }
     public int? LowHealthTargetPenalty { get; set; }
+    public int? AllyDamagePenaltyPerAlly { get; set; }
 }
 
 internal sealed class AiPotionAcquisitionWeightsOverrides
