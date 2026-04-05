@@ -96,9 +96,12 @@ internal sealed class EventValuationHelpers
                 continue;
             }
 
-            double score = EvaluateCatalogCard(entry) * tuning.OutcomeWeights.FixedCardRewardMultiplier;
+            bool canTrustEnrichedMetadata = entry.BuildStatus == CardCatalogBuildStatus.Complete;
+            double score = EvaluateCatalogCard(entry, canTrustEnrichedMetadata) * tuning.OutcomeWeights.FixedCardRewardMultiplier;
             total += score;
-            reasons.Add($"fixedCard={entry.CardId} cardEval={score:F1}");
+            reasons.Add(canTrustEnrichedMetadata
+                ? $"fixedCard={entry.CardId} cardEval={score:F1}"
+                : $"fixedCard={entry.CardId} partialCatalogBaselineEval={score:F1}");
         }
 
         return total;
@@ -279,7 +282,16 @@ internal sealed class EventValuationHelpers
         }
         else
         {
-            score += EvaluateUpgradeSpec(entry.UpgradeSpec, candidateReasons, tuning);
+            if (entry.BuildStatus == CardCatalogBuildStatus.Complete)
+            {
+                score += EvaluateUpgradeSpec(entry.UpgradeSpec, candidateReasons, tuning);
+            }
+            else
+            {
+                score += tuning.OutcomeWeights.UpgradeSpecBaseValue;
+                candidateReasons.Add("partial catalog upgrade data unavailable; conservative upgrade baseline");
+            }
+
             if (entry.Rarity == "Basic")
             {
                 score += tuning.OutcomeWeights.UpgradeBasicCardBonus;
@@ -465,7 +477,7 @@ internal sealed class EventValuationHelpers
         return score;
     }
 
-    private static double EvaluateCatalogCard(CardCatalogEntry entry)
+    private static double EvaluateCatalogCard(CardCatalogEntry entry, bool canTrustEnrichedMetadata)
     {
         double score = entry.Rarity switch
         {
@@ -494,16 +506,19 @@ internal sealed class EventValuationHelpers
             score -= 2d;
         }
 
-        score += entry.SemanticProfile.Effects.Sum(static effect =>
-            effect.Kind switch
-            {
-                EffectKind.DealDamage => Math.Min(effect.Amount * effect.RepeatCount, 20) * 0.4d,
-                EffectKind.GainBlock => Math.Min(effect.Amount * effect.RepeatCount, 20) * 0.35d,
-                EffectKind.DrawCards => effect.Amount * 4d,
-                EffectKind.GainEnergy => effect.Amount * 6d,
-                EffectKind.ApplyPower => effect.Amount * 1.2d,
-                _ => 0.5d
-            });
+        if (canTrustEnrichedMetadata)
+        {
+            score += entry.SemanticProfile.Effects.Sum(static effect =>
+                effect.Kind switch
+                {
+                    EffectKind.DealDamage => Math.Min(effect.Amount * effect.RepeatCount, 20) * 0.4d,
+                    EffectKind.GainBlock => Math.Min(effect.Amount * effect.RepeatCount, 20) * 0.35d,
+                    EffectKind.DrawCards => effect.Amount * 4d,
+                    EffectKind.GainEnergy => effect.Amount * 6d,
+                    EffectKind.ApplyPower => effect.Amount * 1.2d,
+                    _ => 0.5d
+                });
+        }
 
         return score;
     }

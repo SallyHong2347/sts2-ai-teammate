@@ -9,6 +9,14 @@ internal sealed class ResolvedCardView
 
     public required string CardId { get; init; }
 
+    public CardCatalogBuildStatus CatalogBuildStatus { get; init; } = CardCatalogBuildStatus.Failed;
+
+    public string MetadataSource { get; init; } = "Unknown";
+
+    public bool UsesConservativeMetadata { get; init; }
+
+    public bool CanTrustEnrichedMetadata { get; init; }
+
     public required string Name { get; init; }
 
     public required CardType Type { get; init; }

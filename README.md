@@ -13,6 +13,11 @@ This project currently maintains separate branches for two public Slay the Spire
 
 The split exists because several multiplayer-facing APIs changed between those builds. See [version branches](docs/VERSION_BRANCHES.md).
 
+## Recent updates
+
+- Card catalog initialization is now more robust around special cards, with safer fallback handling for card info
+- A combat action-queue error that could surface while AI teammates played cards has been fixed
+
 ## What the mod currently does
 
 - Adds AI-controlled teammates to a local fake-multiplayer run

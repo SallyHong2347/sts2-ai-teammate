@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Entities.Actions;
@@ -16,6 +17,12 @@ namespace AITeammate.Scripts;
 
 internal sealed partial class AiTeammateDummyController
 {
+    private static readonly FieldInfo? ActionQueuesField =
+        typeof(ActionQueueSet).GetField("_actionQueues", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly Type? ActionQueueType =
+        typeof(ActionQueueSet).GetNestedType("ActionQueue", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly FieldInfo? ActionQueueActionsField =
+        ActionQueueType?.GetField("actions", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
     private static readonly IAiDecisionBackend DecisionBackend = AiDecisionBackendFactory.CreateDefault();
     private static readonly TimeSpan IdleTickInterval = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan EndTurnGraceInterval = TimeSpan.FromMilliseconds(400);
@@ -558,24 +565,78 @@ internal sealed partial class AiTeammateDummyController
 
     private bool IsQueueSettledForReplan(PendingIssuedActionSettlement settlement)
     {
+        // Block while our own player-driven action is still executing.
         GameAction? runningAction = RunManager.Instance.ActionExecutor.CurrentlyRunningAction;
         if (runningAction != null &&
             ActionQueueSet.IsGameActionPlayerDriven(runningAction) &&
             runningAction.OwnerId == PlayerId)
         {
+            Log.Debug($"[AITeammate] Player={PlayerId} queue not settled for actionId={settlement.ActionId}; own running action={DescribeTrackedAction(runningAction)}");
             return false;
         }
 
-        GameAction? readyAction = RunManager.Instance.ActionQueueSet.GetReadyAction();
-        if (readyAction != null &&
-            ActionQueueSet.IsGameActionPlayerDriven(readyAction) &&
-            readyAction.OwnerId == PlayerId)
+        // Block while our player's queue has any player-driven actions still active.
+        // Uses direct reflection instead of ActionQueueSet.GetReadyAction() because
+        // GetReadyAction() throws InvalidOperationException when it encounters an action
+        // in Executing state (e.g. after ActionSettleTimeout fires while a card is still running).
+        if (TryGetOwnedQueuedPlayerDrivenAction(out GameAction? queuedAction))
+        {
+            Log.Debug($"[AITeammate] Player={PlayerId} queue not settled for actionId={settlement.ActionId}; owned queued action={DescribeTrackedAction(queuedAction!)}");
+            return false;
+        }
+
+        Log.Debug($"[AITeammate] Player={PlayerId} treating queue as settled for actionId={settlement.ActionId}; runningOwner={runningAction?.OwnerId.ToString() ?? "none"}");
+        return true;
+    }
+
+    private bool TryGetOwnedQueuedPlayerDrivenAction(out GameAction? queuedAction)
+    {
+        queuedAction = null;
+        if (ActionQueuesField?.GetValue(RunManager.Instance.ActionQueueSet) is not System.Collections.IEnumerable queues)
         {
             return false;
         }
 
-        Log.Debug($"[AITeammate] Player={PlayerId} treating queue as settled for actionId={settlement.ActionId}; runningOwner={runningAction?.OwnerId.ToString() ?? "none"} readyOwner={readyAction?.OwnerId.ToString() ?? "none"}");
-        return true;
+        foreach (object? queue in queues)
+        {
+            if (queue == null)
+            {
+                continue;
+            }
+
+            if (ActionQueueActionsField?.GetValue(queue) is not System.Collections.IEnumerable actions)
+            {
+                continue;
+            }
+
+            foreach (object? item in actions)
+            {
+                if (item is not GameAction candidate)
+                {
+                    continue;
+                }
+
+                if (candidate.OwnerId != PlayerId)
+                {
+                    continue;
+                }
+
+                if (!ActionQueueSet.IsGameActionPlayerDriven(candidate))
+                {
+                    continue;
+                }
+
+                if (candidate.State is GameActionState.Canceled or GameActionState.Finished)
+                {
+                    continue;
+                }
+
+                queuedAction = candidate;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string DescribeTrackedAction(GameAction action)

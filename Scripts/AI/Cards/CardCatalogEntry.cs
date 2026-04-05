@@ -7,6 +7,8 @@ internal sealed class CardCatalogEntry
 {
     public required string CardId { get; init; }
 
+    public CardCatalogBuildStatus BuildStatus { get; init; } = CardCatalogBuildStatus.Partial;
+
     public required string Name { get; init; }
 
     public required string PoolId { get; init; }
