@@ -185,8 +185,8 @@ internal sealed class EventValuationHelpers
                              (resolved.GetEnergyGain() * 5) +
                              (resolved.GetEnemyVulnerableAmount() * 3) +
                              (resolved.GetEnemyWeakAmount() * 3) +
-                             (resolved.GetSelfStrengthAmount() * 3) +
-                             (resolved.GetSelfDexterityAmount() * 3);
+                             (resolved.GetTotalStrengthAmount() * 3) +
+                             (resolved.GetTotalDexterityAmount() * 3);
 
             if (knownValue <= 0)
             {

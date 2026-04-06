@@ -47,8 +47,26 @@ internal sealed class CombatActionScorer
         int immediateDamageScore = ScoreImmediateDamage(context, action, card);
         int immediateDefenseScore = ScoreImmediateDefense(context, action, card);
         int enemyDebuffScore = ScoreEnemyDebuff(context, action, card);
-        int selfBuffScore = ScoreSelfBuff(context, action, card);
-        int resourceSetupScore = ScoreResourceSetup(context, action, card);
+        int selfBuffScore;
+        int resourceSetupScore;
+        int allyBenefitScore = 0;
+        DeterministicAllyState? allyTarget = TryGetNonSelfAllyTarget(context, action, card);
+        if (allyTarget != null)
+        {
+            selfBuffScore = 0;
+            resourceSetupScore = 0;
+            allyBenefitScore = ScoreAllyBenefit(context, action, card, allyTarget);
+        }
+        else
+        {
+            selfBuffScore = ScoreSelfBuff(context, action, card);
+            resourceSetupScore = ScoreResourceSetup(context, action, card);
+            if (card.Targeting is TargetType.AnyAlly or TargetType.AnyPlayer)
+            {
+                selfBuffScore += tuning.ResourceWeights.SelfTargetPreferenceBonus;
+            }
+        }
+
         int killPotentialScore = ScoreKillPotential(context, action, card);
         ReactiveCombatPenaltyEvaluation reactivePenalty = ReactiveCombatPenaltyEvaluator.Evaluate(
             context,
@@ -62,13 +80,14 @@ internal sealed class CombatActionScorer
                          enemyDebuffScore +
                          selfBuffScore +
                          resourceSetupScore +
+                         allyBenefitScore +
                          killPotentialScore +
                          ScoreEnergyEfficiency(context, action) -
                          reactivePenalty.TotalScorePenalty;
 
-        CombatActionCategory category = Classify(card, immediateDamageScore, immediateDefenseScore, selfBuffScore, resourceSetupScore);
+        CombatActionCategory category = Classify(card, immediateDamageScore, immediateDefenseScore, selfBuffScore + allyBenefitScore, resourceSetupScore);
         Log.Debug(
-            $"[AITeammate] Semantic score actionId={action.ActionId} category={category} damage={immediateDamageScore} defense={immediateDefenseScore} debuff={enemyDebuffScore} buff={selfBuffScore} setup={resourceSetupScore} kill={killPotentialScore} retaliationPenalty={reactivePenalty.RetaliationPenalty} reactiveStatusPenalty={reactivePenalty.ReactiveStatusPenalty} reactiveCursePenalty={reactivePenalty.ReactiveCursePenalty} reactiveAfflictionPenalty={reactivePenalty.ReactiveAfflictionPenalty} reactiveDebuffPenalty={reactivePenalty.ReactiveDebuffPenalty} cardPlayPunishmentPenalty={reactivePenalty.CardPlayPunishmentPenalty} enemyReactiveBuffPenalty={reactivePenalty.EnemyReactiveBuffPenalty} reactiveUncertaintyPenalty={reactivePenalty.ReactiveUncertaintyPenalty} reactiveDamagePenalty={reactivePenalty.ReactiveDamageTaken} total={totalScore}");
+            $"[AITeammate] Semantic score actionId={action.ActionId} category={category} damage={immediateDamageScore} defense={immediateDefenseScore} debuff={enemyDebuffScore} buff={selfBuffScore} setup={resourceSetupScore} allyBenefit={allyBenefitScore} kill={killPotentialScore} retaliationPenalty={reactivePenalty.RetaliationPenalty} reactiveStatusPenalty={reactivePenalty.ReactiveStatusPenalty} reactiveCursePenalty={reactivePenalty.ReactiveCursePenalty} reactiveAfflictionPenalty={reactivePenalty.ReactiveAfflictionPenalty} reactiveDebuffPenalty={reactivePenalty.ReactiveDebuffPenalty} cardPlayPunishmentPenalty={reactivePenalty.CardPlayPunishmentPenalty} enemyReactiveBuffPenalty={reactivePenalty.EnemyReactiveBuffPenalty} reactiveUncertaintyPenalty={reactivePenalty.ReactiveUncertaintyPenalty} reactiveDamagePenalty={reactivePenalty.ReactiveDamageTaken} allyTarget={allyTarget?.Id ?? "none"} total={totalScore}");
 
         return new CombatActionScore
         {
@@ -228,11 +247,12 @@ internal sealed class CombatActionScorer
     private static int ScoreSelfBuff(DeterministicCombatContext context, AiLegalActionOption action, ResolvedCardView card)
     {
         AiCombatStatusWeights status = context.CombatConfig.Combat.StatusWeights;
-        int temporaryStrength = card.GetSelfTemporaryStrengthAmount();
-        int totalStrength = card.GetSelfStrengthAmount();
+        bool isAllyTargetableCard = card.Targeting is TargetType.AnyAlly or TargetType.AnyPlayer;
+        int temporaryStrength = isAllyTargetableCard ? card.GetAllyTemporaryStrengthAmount() : card.GetSelfTemporaryStrengthAmount();
+        int totalStrength = isAllyTargetableCard ? card.GetAllyStrengthAmount() : card.GetSelfStrengthAmount();
         int persistentStrength = Math.Max(0, totalStrength - temporaryStrength);
-        int temporaryDexterity = card.GetSelfTemporaryDexterityAmount();
-        int totalDexterity = card.GetSelfDexterityAmount();
+        int temporaryDexterity = isAllyTargetableCard ? card.GetAllyTemporaryDexterityAmount() : card.GetSelfTemporaryDexterityAmount();
+        int totalDexterity = isAllyTargetableCard ? card.GetAllyDexterityAmount() : card.GetSelfDexterityAmount();
         int persistentDexterity = Math.Max(0, totalDexterity - temporaryDexterity);
 
         int score = 0;
@@ -285,6 +305,96 @@ internal sealed class CombatActionScorer
         if (energyGain > 0)
         {
             score += energyGain * resource.EnergyGainValue;
+        }
+
+        return score;
+    }
+
+    private static DeterministicAllyState? TryGetNonSelfAllyTarget(DeterministicCombatContext context, AiLegalActionOption action, ResolvedCardView card)
+    {
+        if (card.Targeting is not (TargetType.AnyAlly or TargetType.AnyPlayer))
+        {
+            return null;
+        }
+
+        if (string.IsNullOrEmpty(action.TargetId) ||
+            !context.AlliesById.TryGetValue(action.TargetId, out DeterministicAllyState? ally))
+        {
+            return null;
+        }
+
+        return ally.IsActor ? null : ally;
+    }
+
+    private static int ScoreAllyBenefit(DeterministicCombatContext context, AiLegalActionOption action, ResolvedCardView card, DeterministicAllyState ally)
+    {
+        AiCombatResourceWeights resource = context.CombatConfig.Combat.ResourceWeights;
+        AiCombatStatusWeights status = context.CombatConfig.Combat.StatusWeights;
+        int score = 0;
+
+        int energyGain = card.GetEnergyGain();
+        if (energyGain > 0)
+        {
+            bool allyCanSpend = ally.HandSize > 0 && ally.Energy < ally.HandSize;
+            score += allyCanSpend
+                ? energyGain * resource.EnergyGainValue
+                : energyGain * Math.Max(1, resource.EnergyGainValue / 4);
+        }
+
+        int cardsDrawn = card.GetCardsDrawn();
+        if (cardsDrawn > 0)
+        {
+            bool allyHasEnergy = ally.Energy > 0;
+            score += allyHasEnergy
+                ? cardsDrawn * resource.DrawValueWhenPlayable
+                : -cardsDrawn * resource.DrawPenaltyWhenNotPlayable;
+        }
+
+        int totalStrength = card.GetAllyStrengthAmount();
+        if (totalStrength > 0)
+        {
+            int temporaryStrength = card.GetAllyTemporaryStrengthAmount();
+            int persistentStrength = Math.Max(0, totalStrength - temporaryStrength);
+            bool allyHasActions = ally.HandSize > 0 && ally.Energy > 0;
+            if (temporaryStrength > 0)
+            {
+                score += temporaryStrength * (allyHasActions
+                    ? status.TemporaryStrengthMinimumValue
+                    : Math.Max(1, status.TemporaryStrengthMinimumValue / 3));
+            }
+
+            if (persistentStrength > 0)
+            {
+                score += persistentStrength * status.PersistentStrengthMinimumValue;
+            }
+        }
+
+        int totalDexterity = card.GetAllyDexterityAmount();
+        if (totalDexterity > 0)
+        {
+            int temporaryDexterity = card.GetAllyTemporaryDexterityAmount();
+            int persistentDexterity = Math.Max(0, totalDexterity - temporaryDexterity);
+            bool allyThreatened = ally.IncomingDamage > ally.Block;
+            if (temporaryDexterity > 0)
+            {
+                score += temporaryDexterity * (allyThreatened
+                    ? status.TemporaryDexterityMinimumValue
+                    : Math.Max(1, status.TemporaryDexterityMinimumValue / 3));
+            }
+
+            if (persistentDexterity > 0)
+            {
+                score += persistentDexterity * status.PersistentDexterityMinimumValue;
+            }
+        }
+
+        int estimatedBlock = card.GetEstimatedBlock();
+        if (estimatedBlock > 0)
+        {
+            AiCombatRiskProfile risk = context.CombatConfig.Combat.RiskProfile;
+            int unblocked = Math.Max(0, ally.IncomingDamage - ally.Block);
+            int prevented = Math.Min(estimatedBlock, unblocked);
+            score += risk.ApplyDefenseWeight(prevented * Math.Max(1, risk.BlockedDamageValuePerPoint / 2));
         }
 
         return score;
@@ -753,21 +863,27 @@ internal sealed class CombatActionScorer
         int score = 0;
         if (PotionEffectHitsActor(context, action, effect))
         {
-            score += ScoreHealingForActor(context.CurrentHp, context.IncomingDamage, magnitude, risk);
+            score += ScoreHealingForActor(context.CurrentHp, context.MaxHp, context.IncomingDamage, magnitude, risk);
         }
 
         foreach (DeterministicAllyState ally in GetPotionAffectedTeammates(context, action, effect))
         {
-            score += ScoreHealingForActor(ally.CurrentHp, ally.IncomingDamage, magnitude, risk);
+            score += ScoreHealingForActor(ally.CurrentHp, ally.MaxHp, ally.IncomingDamage, magnitude, risk);
         }
 
         return score;
     }
 
-    private static int ScoreHealingForActor(int hp, int incomingDamage, int magnitude, AiCombatRiskProfile risk)
+    private static int ScoreHealingForActor(int hp, int maxHp, int incomingDamage, int magnitude, AiCombatRiskProfile risk)
     {
+        int effectiveHealing = maxHp > 0 ? Math.Min(magnitude, Math.Max(0, maxHp - hp)) : magnitude;
+        if (effectiveHealing <= 0)
+        {
+            return 0;
+        }
+
         int urgencyMultiplier = hp <= Math.Max(12, incomingDamage) ? 2 : 1;
-        return magnitude * Math.Max(1, risk.BlockedDamageValuePerPoint) * urgencyMultiplier;
+        return effectiveHealing * Math.Max(1, risk.BlockedDamageValuePerPoint) * urgencyMultiplier;
     }
 
     private static int ScoreBlockEffect(DeterministicCombatContext context, AiLegalActionOption action, PotionEffectDescriptor effect, int magnitude, AiCombatRiskProfile risk)

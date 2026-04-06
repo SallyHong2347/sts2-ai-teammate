@@ -1,8 +1,13 @@
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Map;
+using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Encounters;
 using MegaCrit.Sts2.Core.Models.Events;
+using MegaCrit.Sts2.Core.Models.Cards;
+using MegaCrit.Sts2.Core.Models.Potions;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
 
@@ -10,6 +15,30 @@ namespace AITeammate.Scripts;
 
 internal static class AiTeammateTestMapPatches
 {
+    private const int TargetHumanBelieveInYouCopies = 3;
+    private static readonly Func<PotionModel>[] TestMapPotionFactories =
+    [
+        static () => ModelDb.Potion<VulnerablePotion>().ToMutable(),
+        static () => ModelDb.Potion<BlockPotion>().ToMutable(),
+        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
+        static () => ModelDb.Potion<FirePotion>().ToMutable(),
+        static () => ModelDb.Potion<BloodPotion>().ToMutable(),
+        static () => ModelDb.Potion<EnergyPotion>().ToMutable(),
+        static () => ModelDb.Potion<DexterityPotion>().ToMutable(),
+        static () => ModelDb.Potion<WeakPotion>().ToMutable()
+    ];
+    private static readonly Func<PotionModel>[] HumanTestMapPotionFactories =
+    [
+        static () => ModelDb.Potion<EnergyPotion>().ToMutable(),
+        static () => ModelDb.Potion<EnergyPotion>().ToMutable(),
+        static () => ModelDb.Potion<EnergyPotion>().ToMutable(),
+        static () => ModelDb.Potion<EnergyPotion>().ToMutable(),
+        static () => ModelDb.Potion<EnergyPotion>().ToMutable(),
+        static () => ModelDb.Potion<EnergyPotion>().ToMutable(),
+        static () => ModelDb.Potion<EnergyPotion>().ToMutable(),
+        static () => ModelDb.Potion<EnergyPotion>().ToMutable()
+    ];
+
     [HarmonyPatch(typeof(ActModel), nameof(ActModel.CreateMap))]
     private static class ActModelCreateMapPatch
     {
@@ -82,8 +111,16 @@ internal static class AiTeammateTestMapPatches
 
             foreach (var player in runState.Players)
             {
+                bool isHumanPlayer = AiTeammateSessionRegistry.Current?.HostPlayerId == player.NetId;
                 player.Gold = TestMapStartingGold;
                 Log.Info($"[AITeammate] Seeded test-map starting gold player={player.NetId} gold={TestMapStartingGold}");
+                SeedTestMapPotions(player, isHumanPlayer);
+                RemoveOverclockFromDeck(player);
+
+                if (isHumanPlayer)
+                {
+                    SeedHumanTestMapDeck(player);
+                }
             }
         }
     }
@@ -111,5 +148,101 @@ internal static class AiTeammateTestMapPatches
         }
 
         return null;
+    }
+
+    private static void SeedTestMapPotions(MegaCrit.Sts2.Core.Entities.Players.Player player, bool overwriteWithEnergyPotions)
+    {
+        Func<PotionModel>[] potionFactories = overwriteWithEnergyPotions
+            ? HumanTestMapPotionFactories
+            : TestMapPotionFactories;
+
+        if (player.MaxPotionCount < potionFactories.Length)
+        {
+            player.AddToMaxPotionCount(potionFactories.Length - player.MaxPotionCount);
+        }
+
+        if (overwriteWithEnergyPotions)
+        {
+            foreach (PotionModel potion in player.PotionSlots.Where(static potion => potion != null).Cast<PotionModel>().ToList())
+            {
+                player.DiscardPotionInternal(potion, silent: true);
+            }
+        }
+
+        int added = 0;
+        for (int slotIndex = 0; slotIndex < potionFactories.Length; slotIndex++)
+        {
+            if (player.PotionSlots[slotIndex] != null)
+            {
+                continue;
+            }
+
+            var result = player.AddPotionInternal(potionFactories[slotIndex](), slotIndex, silent: true);
+            if (result.success)
+            {
+                added++;
+            }
+        }
+
+        string potionSummary = string.Join(", ", player.PotionSlots.Select(static potion => potion?.Id.Entry ?? "empty"));
+        Log.Info($"[AITeammate] Seeded test-map potion belt player={player.NetId} humanOverride={overwriteWithEnergyPotions} added={added} slots={player.MaxPotionCount} potions=[{potionSummary}]");
+    }
+
+    private static void RemoveOverclockFromDeck(MegaCrit.Sts2.Core.Entities.Players.Player player)
+    {
+        List<CardModel> overclockCards = player.Deck.Cards.Where(static card => card is Overclock).ToList();
+        foreach (CardModel overclock in overclockCards)
+        {
+            player.Deck.RemoveInternal(overclock, silent: true);
+            player.RunState.RemoveCard(overclock);
+        }
+
+        string deckSummary = string.Join(", ", player.Deck.Cards.Select(static card => card.Id.Entry));
+        Log.Info($"[AITeammate] Removed test-map Overclock cards player={player.NetId} removed={overclockCards.Count} deckCount={player.Deck.Cards.Count} deck=[{deckSummary}]");
+    }
+
+    private static void SeedHumanTestMapDeck(MegaCrit.Sts2.Core.Entities.Players.Player player)
+    {
+        int existingCopies = player.Deck.Cards.Count(static card => card is BelieveInYou);
+        int addedCopies = 0;
+        for (int copyIndex = existingCopies; copyIndex < TargetHumanBelieveInYouCopies; copyIndex++)
+        {
+            CardModel believeInYou = ModelDb.Card<BelieveInYou>().ToMutable();
+            believeInYou.FloorAddedToDeck = 1;
+            player.RunState.AddCard(believeInYou, player);
+            player.Deck.AddInternal(believeInYou, -1, silent: true);
+            believeInYou.AfterCreated();
+            addedCopies++;
+        }
+
+        string deckSummary = string.Join(", ", player.Deck.Cards.Select(static card => card.Id.Entry));
+        Log.Info($"[AITeammate] Seeded human test-map deck player={player.NetId} believeInYouCopies={player.Deck.Cards.Count(static card => card is BelieveInYou)} added={addedCopies} deckCount={player.Deck.Cards.Count} deck=[{deckSummary}]");
+    }
+
+    private static void LogTestCardLibraryInitialization()
+    {
+        try
+        {
+            CardCatalogRepository repository = CardCatalogRepository.Shared;
+            string overclockId = ModelDb.Card<Overclock>().Id.Entry;
+            string burnId = ModelDb.Card<Burn>().Id.Entry;
+
+            bool hasOverclockEntry = repository.TryGet(overclockId, out CardCatalogEntry? overclockEntry) && overclockEntry != null;
+            bool hasBurnEntry = repository.TryGet(burnId, out CardCatalogEntry? burnEntry) && burnEntry != null;
+            bool hasOverclockStatus = repository.TryGetStatus(overclockId, out CardCatalogBuildStatus overclockStatus);
+            bool hasBurnStatus = repository.TryGetStatus(burnId, out CardCatalogBuildStatus burnStatus);
+
+            Log.Info(
+                $"[AITeammate] Test card library initialization completed repositoryEntries={repository.Count} " +
+                $"overclockStatus={(hasOverclockStatus ? overclockStatus : CardCatalogBuildStatus.Failed)} " +
+                $"overclockEntry={(hasOverclockEntry ? "present" : "missing")} " +
+                $"burnStatus={(hasBurnStatus ? burnStatus : CardCatalogBuildStatus.Failed)} " +
+                $"burnEntry={(hasBurnEntry ? "present" : "missing")}.");
+        }
+        catch (Exception exception)
+        {
+            Log.Warn($"[AITeammate] Test card library initialization probe failed: {exception.GetType().Name}: {exception.Message}");
+            throw;
+        }
     }
 }

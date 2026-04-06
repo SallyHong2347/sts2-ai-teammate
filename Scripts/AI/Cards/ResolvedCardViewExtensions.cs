@@ -99,6 +99,50 @@ internal static class ResolvedCardViewExtensions
         return card.GetAppliedPowerAmount("Dexterity", TargetScope.Self, DurationHint.ThisTurn);
     }
 
+    public static int GetTotalStrengthAmount(this ResolvedCardView? card)
+    {
+        return card.GetSelfStrengthAmount() + card.GetAllyStrengthAmount();
+    }
+
+    public static int GetTotalDexterityAmount(this ResolvedCardView? card)
+    {
+        return card.GetSelfDexterityAmount() + card.GetAllyDexterityAmount();
+    }
+
+    public static int GetTotalTemporaryStrengthAmount(this ResolvedCardView? card)
+    {
+        return card.GetSelfTemporaryStrengthAmount() + card.GetAllyTemporaryStrengthAmount();
+    }
+
+    public static int GetTotalTemporaryDexterityAmount(this ResolvedCardView? card)
+    {
+        return card.GetSelfTemporaryDexterityAmount() + card.GetAllyTemporaryDexterityAmount();
+    }
+
+    public static int GetAllyStrengthAmount(this ResolvedCardView? card)
+    {
+        return card.GetAppliedPowerAmount("Strength", TargetScope.SingleAlly) +
+               card.GetAppliedPowerAmount("Strength", TargetScope.AllAllies);
+    }
+
+    public static int GetAllyDexterityAmount(this ResolvedCardView? card)
+    {
+        return card.GetAppliedPowerAmount("Dexterity", TargetScope.SingleAlly) +
+               card.GetAppliedPowerAmount("Dexterity", TargetScope.AllAllies);
+    }
+
+    public static int GetAllyTemporaryStrengthAmount(this ResolvedCardView? card)
+    {
+        return card.GetAppliedPowerAmount("Strength", TargetScope.SingleAlly, DurationHint.ThisTurn) +
+               card.GetAppliedPowerAmount("Strength", TargetScope.AllAllies, DurationHint.ThisTurn);
+    }
+
+    public static int GetAllyTemporaryDexterityAmount(this ResolvedCardView? card)
+    {
+        return card.GetAppliedPowerAmount("Dexterity", TargetScope.SingleAlly, DurationHint.ThisTurn) +
+               card.GetAppliedPowerAmount("Dexterity", TargetScope.AllAllies, DurationHint.ThisTurn);
+    }
+
     public static int GetCardsDrawn(this ResolvedCardView? card)
     {
         return card.GetEffectAmount(EffectKind.DrawCards);

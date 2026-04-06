@@ -308,6 +308,8 @@ internal sealed class AiCombatResourceWeights
 
     public required int EndTurnWhileOtherActionsExistPenalty { get; init; }
 
+    public required int SelfTargetPreferenceBonus { get; init; }
+
     public static AiCombatResourceWeights CreateDefault()
     {
         return new AiCombatResourceWeights
@@ -326,7 +328,8 @@ internal sealed class AiCombatResourceWeights
             RemainingEnergyPenalty = 18,
             RemainingAffordableActionsPenalty = 24,
             EndTurnWhenSkippingPotionsBonus = 24,
-            EndTurnWhileOtherActionsExistPenalty = 10000
+            EndTurnWhileOtherActionsExistPenalty = 10000,
+            SelfTargetPreferenceBonus = 6
         };
     }
 
@@ -348,7 +351,8 @@ internal sealed class AiCombatResourceWeights
             RemainingEnergyPenalty = AiCombatCoreWeights.ClampInt(overrides?.RemainingEnergyPenalty, RemainingEnergyPenalty, 0, 200),
             RemainingAffordableActionsPenalty = AiCombatCoreWeights.ClampInt(overrides?.RemainingAffordableActionsPenalty, RemainingAffordableActionsPenalty, 0, 200),
             EndTurnWhenSkippingPotionsBonus = AiCombatCoreWeights.ClampInt(overrides?.EndTurnWhenSkippingPotionsBonus, EndTurnWhenSkippingPotionsBonus, -100, 200),
-            EndTurnWhileOtherActionsExistPenalty = AiCombatCoreWeights.ClampInt(overrides?.EndTurnWhileOtherActionsExistPenalty, EndTurnWhileOtherActionsExistPenalty, 0, 100000)
+            EndTurnWhileOtherActionsExistPenalty = AiCombatCoreWeights.ClampInt(overrides?.EndTurnWhileOtherActionsExistPenalty, EndTurnWhileOtherActionsExistPenalty, 0, 100000),
+            SelfTargetPreferenceBonus = AiCombatCoreWeights.ClampInt(overrides?.SelfTargetPreferenceBonus, SelfTargetPreferenceBonus, 0, 100)
         };
     }
 }
@@ -610,6 +614,8 @@ internal sealed class AiCombatResourceWeightsOverrides
     public int? EndTurnWhenSkippingPotionsBonus { get; set; }
 
     public int? EndTurnWhileOtherActionsExistPenalty { get; set; }
+
+    public int? SelfTargetPreferenceBonus { get; set; }
 }
 
 internal sealed class AiCombatRiskProfileOverrides

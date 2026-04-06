@@ -15,6 +15,8 @@ The split exists because several multiplayer-facing APIs changed between those b
 
 ## Recent updates
 
+- Ally-targeted card scoring now evaluates the target's state (energy, hand size, incoming damage) instead of scoring all targets identically, with configurable `selfTargetPreferenceBonus`
+- Healing potion scoring now caps at effective healing and scores 0 for full-HP targets
 - Card catalog initialization is now more robust around special cards, with safer fallback handling for card info
 - A combat action-queue error that could surface while AI teammates played cards has been fixed
 

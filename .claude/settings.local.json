@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/hongs/Desktop/sts2Code/sts2PckBeta402/**)",
+      "Bash(xargs grep:*)",
+      "Bash(dotnet build:*)",
+      "Read(//c/Program Files \\(x86\\)/Steam/steamapps/common/Slay the Spire 2/mods/sts2AITeammate/**)",
+      "Bash(ls /c/Users/hongs/Desktop/sts2Code/sts2PckBeta402/src/Core/Models/Cards/*.cs)",
+      "Bash(grep -n \"GuessPowerTargetScope\" /c/Users/hongs/Desktop/sts2AITeammateProject/sts2-ai-teammate/Scripts/AI/Cards/*.cs)",
+      "Bash(find /c/Users/hongs/Desktop/sts2AITeammateProject/sts2-ai-teammate/Scripts/AI -name \"*.cs\" -exec grep -l \"AllyBuff\\\\|ally.*buff\\\\|GetAlly\" {} \\\\;)",
+      "Bash(grep -r \"TargetType.AnyAlly\" /c/Users/hongs/Desktop/sts2Code/sts2PckBeta402/src/Core/Models/Cards/*.cs)",
+      "Bash(grep -r \"TargetType.AllAllies\" /c/Users/hongs/Desktop/sts2Code/sts2PckBeta402/src/Core/Models/Cards/*.cs)",
+      "Bash(grep -r \"Strength\" /c/Users/hongs/Desktop/sts2Code/sts2PckBeta402/src/Core/Models/Cards/*.cs)",
+      "Bash(grep -l \"StrengthPower\\\\|DexterityPower\" /c/Users/hongs/Desktop/sts2Code/sts2PckBeta402/src/Core/Models/Cards/*.cs)",
+      "Bash(grep -l \"DexterityPower\" /c/Users/hongs/Desktop/sts2Code/sts2PckBeta402/src/Core/Models/Cards/*.cs)",
+      "Bash(grep -l \"CardPileCmd.Draw\" /c/Users/hongs/Desktop/sts2Code/sts2PckBeta402/src/Core/Models/Cards/*.cs)",
+      "Bash(ls \"C:\\\\Program Files \\(x86\\)\\\\Steam\\\\steamapps\\\\common\\\\Slay the Spire 2\\\\mods\\\\sts2AITeammate\"/*.log)",
+      "Bash(ls \"C:\\\\Program Files \\(x86\\)\\\\Steam\\\\steamapps\\\\common\\\\Slay the Spire 2\\\\mods\\\\sts2AITeammate\"/*.txt)"
+    ]
+  }
+}

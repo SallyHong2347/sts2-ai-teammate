@@ -406,8 +406,8 @@ internal sealed class CardChoiceEvaluator
 
         public static CardFeatureVector From(ResolvedCardView card)
         {
-            int temporaryStrength = card.GetSelfTemporaryStrengthAmount();
-            int temporaryDexterity = card.GetSelfTemporaryDexterityAmount();
+            int temporaryStrength = card.GetTotalTemporaryStrengthAmount();
+            int temporaryDexterity = card.GetTotalTemporaryDexterityAmount();
 
             return new CardFeatureVector(
                 card.GetEstimatedDamage(),
@@ -416,8 +416,8 @@ internal sealed class CardChoiceEvaluator
                 card.GetEnergyGain(),
                 card.GetEnemyVulnerableAmount(),
                 card.GetEnemyWeakAmount(),
-                Math.Max(0, card.GetSelfStrengthAmount() - temporaryStrength),
-                Math.Max(0, card.GetSelfDexterityAmount() - temporaryDexterity),
+                Math.Max(0, card.GetTotalStrengthAmount() - temporaryStrength),
+                Math.Max(0, card.GetTotalDexterityAmount() - temporaryDexterity),
                 temporaryStrength,
                 temporaryDexterity,
                 Math.Max(card.ReplayCount, 1));

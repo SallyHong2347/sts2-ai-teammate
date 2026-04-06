@@ -39,6 +39,8 @@ internal sealed class DeterministicCombatContext
 
     public int CurrentHp => Actor.Creature.CurrentHp;
 
+    public int MaxHp => Actor.Creature.MaxHp;
+
     public int CurrentBlock => Actor.Creature.Block;
 
     public int Energy => Actor.PlayerCombatState?.Energy ?? 0;
@@ -58,7 +60,13 @@ internal sealed class DeterministicAllyState
 
     public int CurrentHp => Creature.CurrentHp;
 
+    public int MaxHp => Creature.MaxHp;
+
     public int Block => Creature.Block;
+
+    public int Energy => Player.PlayerCombatState?.Energy ?? 0;
+
+    public int HandSize { get; init; }
 
     public int IncomingDamage { get; init; }
 }

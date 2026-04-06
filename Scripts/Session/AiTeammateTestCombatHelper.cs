@@ -45,7 +45,25 @@ internal static class AiTeammateTestCombatHelper
 
         if (firstPatchForCombat)
         {
-            Log.Info($"[AITeammate] Applied one-HP enemy shortcut for test-map combat key={combatKey}.");
+            string enemySummary = string.Join(
+                ", ",
+                player.Creature.CombatState.HittableEnemies.Select(static enemy =>
+                    $"{enemy.GetType().Name}(hp={enemy.CurrentHp},block={enemy.Block},attacking={enemy.Monster?.NextMove?.Intents?.Any() == true})"));
+            string potionSummary = string.Join(
+                ", ",
+                player.PotionSlots.Select(static potion => potion?.Id.Entry ?? "empty"));
+            int overclockCopies = player.Deck.Cards.Count(static card => card.Id.Entry == ModelDb.Card<Overclock>().Id.Entry);
+            int believeInYouCopies = player.Deck.Cards.Count(static card => card.Id.Entry == ModelDb.Card<BelieveInYou>().Id.Entry);
+            string overclockCatalogStatus = CardCatalogRepository.Shared.TryGetStatus(ModelDb.Card<Overclock>().Id.Entry, out CardCatalogBuildStatus overclockStatus)
+                ? overclockStatus.ToString()
+                : "Missing";
+            string believeInYouCatalogStatus = CardCatalogRepository.Shared.TryGetStatus(ModelDb.Card<BelieveInYou>().Id.Entry, out CardCatalogBuildStatus believeInYouStatus)
+                ? believeInYouStatus.ToString()
+                : "Missing";
+            string burnCatalogStatus = CardCatalogRepository.Shared.TryGetStatus(ModelDb.Card<Burn>().Id.Entry, out CardCatalogBuildStatus burnStatus)
+                ? burnStatus.ToString()
+                : "Missing";
+            Log.Info($"[AITeammate] Prepared test-map combat key={combatKey} player={player.NetId} enemies=[{enemySummary}] potions=[{potionSummary}] overclockCopies={overclockCopies} believeInYouCopies={believeInYouCopies} overclockCatalogStatus={overclockCatalogStatus} believeInYouCatalogStatus={believeInYouCatalogStatus} burnCatalogStatus={burnCatalogStatus}");
         }
     }
 
