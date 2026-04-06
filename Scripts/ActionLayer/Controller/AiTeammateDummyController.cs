@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Actions;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Players;
@@ -164,6 +165,7 @@ internal sealed partial class AiTeammateDummyController
 
         if (!player.Creature.IsAlive)
         {
+            HandleDeadPlayerDuringCombat(player);
             return Array.Empty<AiTeammateAvailableAction>();
         }
 
@@ -188,6 +190,26 @@ internal sealed partial class AiTeammateDummyController
         }
 
         return Array.Empty<AiTeammateAvailableAction>();
+    }
+
+    private void HandleDeadPlayerDuringCombat(Player player)
+    {
+        if (!CombatManager.Instance.IsInProgress || !CombatManager.Instance.IsPlayPhase)
+        {
+            return;
+        }
+
+        if (CombatManager.Instance.IsPlayerReadyToEndTurn(player))
+        {
+            return;
+        }
+
+        Log.Info($"[AITeammate] Player={PlayerId} died mid-turn, auto-marking ready to end turn.");
+        _pendingIssuedActionSettlement = null;
+        ClearPendingEndTurn("player_died");
+        _committedEndTurnRound = -1;
+        UnsubscribeCombatStateEvents();
+        CombatManager.Instance.SetReadyToEndTurn(player, canBackOut: false);
     }
 
     public static bool IsAiPlayer(Player? player)
