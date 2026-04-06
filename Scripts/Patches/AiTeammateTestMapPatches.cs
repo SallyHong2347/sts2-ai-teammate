@@ -77,21 +77,32 @@ internal static class AiTeammateTestMapPatches
         private static bool Prefix(RoomType roomType, MapPointType mapPointType, AbstractModel? model, ref AbstractRoom __result)
         {
             RunState? runState = RunManager.Instance.DebugOnlyGetState();
-            if (!AiTeammateSessionRegistry.ShouldUseTestMap(runState) ||
-                roomType != RoomType.Event ||
-                mapPointType != MapPointType.Unknown)
+            if (!AiTeammateSessionRegistry.ShouldUseTestMap(runState))
             {
                 return true;
             }
 
-            EventModel? forcedEvent = GetForcedTestMapEvent(runState?.CurrentMapCoord);
-            if (forcedEvent == null)
+            if (roomType == RoomType.Event && mapPointType == MapPointType.Unknown)
+            {
+                EventModel? forcedEvent = GetForcedTestMapEvent(runState?.CurrentMapCoord);
+                if (forcedEvent == null)
+                {
+                    return true;
+                }
+
+                __result = new EventRoom((model as EventModel) ?? forcedEvent);
+                Log.Info($"[AITeammate] Forced test-map event branch to create {forcedEvent.GetType().Name} at coord={runState?.CurrentMapCoord?.col},{runState?.CurrentMapCoord?.row}.");
+                return false;
+            }
+
+            EncounterModel? forcedEncounter = GetForcedTestMapEncounter(roomType, runState);
+            if (forcedEncounter == null)
             {
                 return true;
             }
 
-            __result = new EventRoom((model as EventModel) ?? forcedEvent);
-            Log.Info($"[AITeammate] Forced test-map event branch to create {forcedEvent.GetType().Name} at coord={runState?.CurrentMapCoord?.col},{runState?.CurrentMapCoord?.row}.");
+            __result = new CombatRoom((model as EncounterModel) ?? forcedEncounter, runState);
+            Log.Info($"[AITeammate] Forced test-map combat room to create {forcedEncounter.GetType().Name} at coord={runState?.CurrentMapCoord?.col},{runState?.CurrentMapCoord?.row} roomType={roomType}.");
             return false;
         }
     }
@@ -104,7 +115,7 @@ internal static class AiTeammateTestMapPatches
         private static void Postfix()
         {
             RunState? runState = RunManager.Instance.DebugOnlyGetState();
-            if (!AiTeammateSessionRegistry.ShouldUseTestMap(runState) || runState == null)
+            if (!AiTeammateSessionRegistry.ShouldUseTestMap(runState) || runState == null || runState.CurrentActIndex != 0)
             {
                 return;
             }
@@ -122,6 +133,8 @@ internal static class AiTeammateTestMapPatches
                     SeedHumanTestMapDeck(player);
                 }
             }
+
+            LogTestCardLibraryInitialization();
         }
     }
 
@@ -145,6 +158,36 @@ internal static class AiTeammateTestMapPatches
         if (AiTeammateTestActMap.IsFakeMerchantCoord(coord))
         {
             return ModelDb.Event<FakeMerchant>();
+        }
+
+        return null;
+    }
+
+    private static EncounterModel? GetForcedTestMapEncounter(RoomType roomType, RunState? runState)
+    {
+        MapCoord? coord = runState?.CurrentMapCoord;
+
+        if (roomType == RoomType.Boss && runState?.CurrentActIndex == 2)
+        {
+            return ModelDb.Encounter<QueenBoss>().ToMutable();
+        }
+
+        if (roomType == RoomType.Elite && AiTeammateTestActMap.IsFirstEliteCoord(coord))
+        {
+            return ModelDb.Encounter<EntomancerElite>().ToMutable();
+        }
+
+        if (roomType == RoomType.Monster && AiTeammateTestActMap.IsFirstMonsterCoord(coord))
+        {
+            return ModelDb.Encounter<ToadpolesWeak>().ToMutable();
+        }
+
+        if (roomType == RoomType.Monster &&
+            (AiTeammateTestActMap.IsSecondMonsterCoord(coord) ||
+             AiTeammateTestActMap.IsThirdMonsterCoord(coord) ||
+             AiTeammateTestActMap.IsFourthMonsterCoord(coord)))
+        {
+            return ModelDb.Encounter<ToadpolesWeak>().ToMutable();
         }
 
         return null;

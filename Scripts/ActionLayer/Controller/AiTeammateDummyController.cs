@@ -27,8 +27,8 @@ internal sealed partial class AiTeammateDummyController
     private static readonly IAiDecisionBackend DecisionBackend = AiDecisionBackendFactory.CreateDefault();
     private static readonly TimeSpan IdleTickInterval = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan EndTurnGraceInterval = TimeSpan.FromMilliseconds(400);
-    private static readonly TimeSpan ActionSettleTimeout = TimeSpan.FromMilliseconds(5000);
-    private static readonly TimeSpan QueueSettleTimeout = TimeSpan.FromMilliseconds(2500);
+    private static readonly TimeSpan ActionSettleTimeout = TimeSpan.FromMilliseconds(10000);
+    private static readonly TimeSpan QueueSettleTimeout = TimeSpan.FromMilliseconds(5000);
     private static readonly TimeSpan PostSettleGraceInterval = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan MaxInitialCombatDecisionStagger = TimeSpan.FromMilliseconds(200);
 
@@ -43,6 +43,7 @@ internal sealed partial class AiTeammateDummyController
     private int _lastCompletedEndTurnRound = -1;
     private int _lastCombatRoundWithInitialStagger = -1;
     private PendingIssuedActionSettlement? _pendingIssuedActionSettlement;
+    private AiTimingTuning? _timingConfig;
     private bool _endTurnReevaluationRequested;
     private int _committedEndTurnRound = -1;
     private int _lastUndoEndTurnRound = -1;
@@ -66,7 +67,7 @@ internal sealed partial class AiTeammateDummyController
     {
         if (TryGetControlledPlayer(out Player controlledPlayer, out RunState controlledRunState))
         {
-            AiTeammateTestCombatHelper.ApplyOneHpEnemiesIfNeeded(controlledPlayer, controlledRunState);
+            AiTeammateTestCombatHelper.PreparePotionTestCombatIfNeeded(controlledPlayer, controlledRunState);
         }
 
         if (_isExecutingAction || DateTime.UtcNow < _nextDecisionAtUtc)
@@ -80,6 +81,11 @@ internal sealed partial class AiTeammateDummyController
         }
 
         if (TryWaitForIssuedActionSettlement())
+        {
+            return;
+        }
+
+        if (DateTime.UtcNow < _nextDecisionAtUtc)
         {
             return;
         }
@@ -740,7 +746,13 @@ internal sealed partial class AiTeammateDummyController
             _lastCompletedEndTurnRound = settlement.CompletedEndTurnRound.Value;
         }
 
-        Log.Info($"[AITeammate] Player={PlayerId} ready to replan after actionId={settlement.ActionId} timeoutFallback={settlement.WasTimeoutFallback}");
+        int actionIntervalMs = GetTimingConfig().ActionIntervalMs;
+        if (actionIntervalMs > 0)
+        {
+            _nextDecisionAtUtc = DateTime.UtcNow + TimeSpan.FromMilliseconds(actionIntervalMs);
+        }
+
+        Log.Info($"[AITeammate] Player={PlayerId} ready to replan after actionId={settlement.ActionId} timeoutFallback={settlement.WasTimeoutFallback} actionIntervalMs={actionIntervalMs}");
         _pendingIssuedActionSettlement = null;
         return false;
     }
@@ -824,6 +836,21 @@ internal sealed partial class AiTeammateDummyController
     private static string DescribeTrackedAction(GameAction action)
     {
         return $"{action.GetType().Name}:{action.State}";
+    }
+
+    private AiTimingTuning GetTimingConfig()
+    {
+        if (_timingConfig != null)
+        {
+            return _timingConfig;
+        }
+
+        if (TryGetControlledPlayer(out Player player, out _))
+        {
+            _timingConfig = AiCharacterCombatConfigLoader.LoadForPlayer(player).Timing;
+        }
+
+        return _timingConfig ?? AiTimingTuning.CreateDefault();
     }
 
     private bool TryGetControlledPlayer(out Player player, out RunState runState)

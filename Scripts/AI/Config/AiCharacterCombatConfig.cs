@@ -5,7 +5,7 @@ namespace AITeammate.Scripts;
 
 internal sealed class AiCharacterCombatConfig
 {
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
     public const string DefaultCharacterId = "default";
     public const string DefaultDisplayName = "Default";
 
@@ -25,6 +25,8 @@ internal sealed class AiCharacterCombatConfig
 
     public required AiEventTuning Events { get; init; }
 
+    public required AiTimingTuning Timing { get; init; }
+
     public static AiCharacterCombatConfig CreateBuiltInDefault(string characterId = DefaultCharacterId, string displayName = DefaultDisplayName)
     {
         return new AiCharacterCombatConfig
@@ -36,7 +38,8 @@ internal sealed class AiCharacterCombatConfig
             CardRewards = AiCardRewardTuning.CreateDefault(),
             Potions = AiPotionTuning.CreateDefault(),
             Shop = AiShopTuning.CreateDefault(),
-            Events = AiEventTuning.CreateDefault()
+            Events = AiEventTuning.CreateDefault(),
+            Timing = AiTimingTuning.CreateDefault()
         };
     }
 }
@@ -393,6 +396,12 @@ internal sealed class AiCombatRiskProfile
 
     public required int ExposedDamageWithoutDefensePenalty { get; init; }
 
+    public required int LowHealthEmergencyThreshold { get; init; }
+
+    public required int GraveDangerFloor { get; init; }
+
+    public required double GraveDangerHpFraction { get; init; }
+
     public static AiCombatRiskProfile CreateDefault()
     {
         return new AiCombatRiskProfile
@@ -413,7 +422,10 @@ internal sealed class AiCombatRiskProfile
             WeakPreventionValuePerPoint = 10,
             DeadEnemyReward = 45,
             PerfectDefenseBonus = 60,
-            ExposedDamageWithoutDefensePenalty = 35
+            ExposedDamageWithoutDefensePenalty = 35,
+            LowHealthEmergencyThreshold = 12,
+            GraveDangerFloor = 10,
+            GraveDangerHpFraction = 0.333d
         };
     }
 
@@ -438,7 +450,10 @@ internal sealed class AiCombatRiskProfile
             WeakPreventionValuePerPoint = AiCombatCoreWeights.ClampInt(nested?.WeakPreventionValuePerPoint, WeakPreventionValuePerPoint, 0, 100),
             DeadEnemyReward = AiCombatCoreWeights.ClampInt(nested?.DeadEnemyReward, DeadEnemyReward, 0, 250),
             PerfectDefenseBonus = AiCombatCoreWeights.ClampInt(nested?.PerfectDefenseBonus, PerfectDefenseBonus, 0, 250),
-            ExposedDamageWithoutDefensePenalty = AiCombatCoreWeights.ClampInt(nested?.ExposedDamageWithoutDefensePenalty, ExposedDamageWithoutDefensePenalty, 0, 250)
+            ExposedDamageWithoutDefensePenalty = AiCombatCoreWeights.ClampInt(nested?.ExposedDamageWithoutDefensePenalty, ExposedDamageWithoutDefensePenalty, 0, 250),
+            LowHealthEmergencyThreshold = AiCombatCoreWeights.ClampInt(nested?.LowHealthEmergencyThreshold, LowHealthEmergencyThreshold, 1, 50),
+            GraveDangerFloor = AiCombatCoreWeights.ClampInt(nested?.GraveDangerFloor, GraveDangerFloor, 1, 50),
+            GraveDangerHpFraction = AiCombatCoreWeights.ClampDouble(nested?.GraveDangerHpFraction, GraveDangerHpFraction, 0.05d, 0.75d)
         };
     }
 
@@ -480,6 +495,8 @@ internal sealed class AiCharacterCombatConfigFile
     public AiShopTuningOverrides? Shop { get; set; }
 
     public AiEventTuningOverrides? Events { get; set; }
+
+    public AiTimingTuningOverrides? Timing { get; set; }
 }
 
 internal sealed class AiCharacterCombatTuningOverrides
@@ -653,6 +670,38 @@ internal sealed class AiCombatRiskProfileOverrides
     public int? PerfectDefenseBonus { get; set; }
 
     public int? ExposedDamageWithoutDefensePenalty { get; set; }
+
+    public int? LowHealthEmergencyThreshold { get; set; }
+
+    public int? GraveDangerFloor { get; set; }
+
+    public double? GraveDangerHpFraction { get; set; }
+}
+
+internal sealed class AiTimingTuning
+{
+    public required int ActionIntervalMs { get; init; }
+
+    public static AiTimingTuning CreateDefault()
+    {
+        return new AiTimingTuning
+        {
+            ActionIntervalMs = 0
+        };
+    }
+
+    public AiTimingTuning Merge(AiTimingTuningOverrides? overrides)
+    {
+        return new AiTimingTuning
+        {
+            ActionIntervalMs = AiCombatCoreWeights.ClampInt(overrides?.ActionIntervalMs, ActionIntervalMs, 0, 20000)
+        };
+    }
+}
+
+internal sealed class AiTimingTuningOverrides
+{
+    public int? ActionIntervalMs { get; set; }
 }
 
 internal static class AiCharacterCombatConfigCatalog

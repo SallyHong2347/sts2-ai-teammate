@@ -215,7 +215,7 @@ internal sealed class CombatActionScorer
             score += dexterity * futureBlockValue;
         }
 
-        if (context.CurrentHp <= Math.Max(12, context.IncomingDamage))
+        if (context.CurrentHp <= Math.Max(risk.LowHealthEmergencyThreshold, context.IncomingDamage))
         {
             score += risk.LowHealthEmergencyDefenseBonus;
         }
@@ -708,7 +708,7 @@ internal sealed class CombatActionScorer
         if (effectiveMetadata.HarmsAllAllies)
         {
             int affectedAllies = Math.Max(1, context.AlliesById.Values.Count(static ally => !ally.IsActor));
-            breakdown.AllyDamagePenalty += affectedAllies * 12;
+            breakdown.AllyDamagePenalty += affectedAllies * potionUse.AllyDamagePenaltyPerAlly;
         }
 
         return breakdown;
@@ -716,8 +716,10 @@ internal sealed class CombatActionScorer
 
     private static bool IsGraveDanger(DeterministicCombatContext context)
     {
+        AiCombatRiskProfile risk = context.CombatConfig.Combat.RiskProfile;
         int uncoveredDamage = Math.Max(0, context.IncomingDamage - context.CurrentBlock);
-        return uncoveredDamage >= Math.Max(10, context.CurrentHp / 3) || uncoveredDamage >= context.CurrentHp;
+        int hpFractionThreshold = (int)(context.CurrentHp * risk.GraveDangerHpFraction);
+        return uncoveredDamage >= Math.Max(risk.GraveDangerFloor, hpFractionThreshold) || uncoveredDamage >= context.CurrentHp;
     }
 
     private static bool ShouldPreferEndTurnOverRemainingPotions(DeterministicCombatContext context)
@@ -840,7 +842,7 @@ internal sealed class CombatActionScorer
         {
             directPenalty += risk.LethalPriorityBonus + incomingDamage * risk.LethalIncomingDamageValue;
         }
-        else if (hp <= Math.Max(12, incomingDamage) || magnitude >= Math.Max(1, hp / 2))
+        else if (hp <= Math.Max(risk.LowHealthEmergencyThreshold, incomingDamage) || magnitude >= Math.Max(1, hp / 2))
         {
             directPenalty += risk.LowHealthEmergencyDefenseBonus;
         }
@@ -882,7 +884,7 @@ internal sealed class CombatActionScorer
             return 0;
         }
 
-        int urgencyMultiplier = hp <= Math.Max(12, incomingDamage) ? 2 : 1;
+        int urgencyMultiplier = hp <= Math.Max(risk.LowHealthEmergencyThreshold, incomingDamage) ? 2 : 1;
         return effectiveHealing * Math.Max(1, risk.BlockedDamageValuePerPoint) * urgencyMultiplier;
     }
 

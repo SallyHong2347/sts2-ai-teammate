@@ -98,7 +98,8 @@ internal static class AiCharacterCombatConfigLoader
             CardRewards = fallback.CardRewards.Merge(file?.CardRewards),
             Potions = fallback.Potions.Merge(file?.Potions),
             Shop = fallback.Shop.Merge(file?.Shop),
-            Events = fallback.Events.Merge(file?.Events)
+            Events = fallback.Events.Merge(file?.Events),
+            Timing = fallback.Timing.Merge(file?.Timing)
         };
     }
 

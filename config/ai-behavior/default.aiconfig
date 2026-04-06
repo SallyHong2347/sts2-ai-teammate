@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "characterId": "default",
   "displayName": "Default",
   "combat": {
@@ -79,7 +79,10 @@
       "weakPreventionValuePerPoint": 10,
       "deadEnemyReward": 45,
       "perfectDefenseBonus": 60,
-      "exposedDamageWithoutDefensePenalty": 35
+      "exposedDamageWithoutDefensePenalty": 35,
+      "lowHealthEmergencyThreshold": 12,
+      "graveDangerFloor": 10,
+      "graveDangerHpFraction": 0.333
     }
   },
   "cardRewards": {
@@ -170,7 +173,8 @@
       "eliteBossOffensiveFollowUpBonus": 95,
       "normalFightOffensiveFollowUpBonus": 25,
       "attackingTargetBonus": 8,
-      "lowHealthTargetPenalty": 18
+      "lowHealthTargetPenalty": 18,
+      "allyDamagePenaltyPerAlly": 12
     },
     "acquisition": {
       "eventBaseline": 14.0,
@@ -281,5 +285,8 @@
       "unknownEffectsPenalty": 12.0,
       "lethalOptionPenalty": 1000.0
     }
+  },
+  "timing": {
+    "actionIntervalMs": 0
   }
 }

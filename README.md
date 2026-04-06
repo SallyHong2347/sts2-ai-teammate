@@ -4,21 +4,20 @@ AI Teammate is an experimental Slay the Spire 2 mod that adds AI-controlled team
 
 This repository is the public codebase for the mod. It is intended for players who want to use the release, and for tinkerers who want to inspect, tune, fork, or extend the project.
 
-## Version branches
-
-This project currently maintains separate branches for two public Slay the Spire 2 builds:
-
-- `beta-326` for the public beta build updated on March 26
-- `default-314` for the public default build updated on March 14
-
-The split exists because several multiplayer-facing APIs changed between those builds. See [version branches](docs/VERSION_BRANCHES.md).
+Compatibility note: the current `default-314` branch is updated for the Slay the Spire 2 public default release from March 14, 2026.
 
 ## Recent updates
 
 - Ally-targeted card scoring now evaluates the target's state (energy, hand size, incoming damage) instead of scoring all targets identically, with configurable `selfTargetPreferenceBonus`
 - Healing potion scoring now caps at effective healing and scores 0 for full-HP targets
+- Exposed `lowHealthEmergencyThreshold`, `graveDangerFloor`, `graveDangerHpFraction` in combat risk profile and `allyDamagePenaltyPerAlly` in potion combat config
+- Added configurable `timing.actionIntervalMs` to control the delay between AI card plays (default 0, range 0-2000ms)
+- Doubled action settlement and queue settlement timeouts for better handling of long card animations
 - Card catalog initialization is now more robust around special cards, with safer fallback handling for card info
-- A combat action-queue error that could surface while AI teammates played cards has been fixed
+- A combat action-queue error that could surface while AI teammates played cards such as `Overclock` has been fixed
+- Rest-site logic now scores `Rest`, `Smith`, and supported special options more cleanly, including `Mend`
+- Combat target generation and reactive-punishment handling have been improved for cards and potions
+- Potion scoring and same-turn potion follow-up planning have been improved, including better mixed-effect evaluation
 
 ## What the mod currently does
 
@@ -72,10 +71,12 @@ The current config surface covers:
 - potion heuristics
 - shop valuation
 - event valuation
+- timing / pacing (action interval between card plays)
 
 See:
 
-- [AI behavior config](docs/ai-behavior-config.md)
+- [AI config parameters guide](docs/ai-config-parameters.md) - explains every parameter from a player's perspective
+- [AI behavior config](docs/ai-behavior-config.md) - technical config structure and fallback behavior
 - [AI behavior preset ideas](docs/ai-behavior-presets.md)
 
 ## Build and run basics
