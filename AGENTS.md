@@ -26,7 +26,7 @@ The goal is to maintain steady progress with small, verifiable steps.
 
 
 ## Documentation maintenance
-Always ensure a `docs/` folder exists.
+Always ensure a `docs_private/` folder exists.
 
 ### debugging-notes.md
 Keep short, practical notes:

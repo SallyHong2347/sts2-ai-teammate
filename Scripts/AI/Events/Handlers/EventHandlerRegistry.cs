@@ -18,7 +18,8 @@ internal sealed class EventHandlerRegistry
         new WellspringEventHandler(),
         new WhisperingHollowEventHandler(),
         new WoodCarvingsEventHandler(),
-        new ZenWeaverEventHandler()
+        new ZenWeaverEventHandler(),
+        new TabletOfTruthEventHandler()
     ];
 
     public IEventSpecialHandler? Resolve(EventVisitState snapshot)

@@ -292,10 +292,18 @@ internal sealed class EventValuationHelpers
                 candidateReasons.Add("partial catalog upgrade data unavailable; conservative upgrade baseline");
             }
 
-            if (entry.Rarity == "Basic")
+            double rarityBonus = entry.Rarity switch
             {
-                score += tuning.OutcomeWeights.UpgradeBasicCardBonus;
-                candidateReasons.Add($"basic card cleanup/value +{tuning.OutcomeWeights.UpgradeBasicCardBonus:F1}");
+                "Rare" => 6d,
+                "Uncommon" => 3d,
+                "Common" => 0d,
+                "Basic" => -4d,
+                _ => 0d
+            };
+            score += rarityBonus;
+            if (rarityBonus != 0d)
+            {
+                candidateReasons.Add($"rarity={entry.Rarity} bonus={rarityBonus:+0.0;-0.0}");
             }
 
             if (entry.Type == CardType.Power)
@@ -444,9 +452,25 @@ internal sealed class EventValuationHelpers
             reasons.Add($"costReduction +{bonus:F1}");
         }
 
-        foreach ((EffectAdjustmentKey _, int value) in spec.EffectAmountAdjustments)
+        foreach ((EffectAdjustmentKey key, int value) in spec.EffectAmountAdjustments)
         {
-            score += Math.Max(0, value) * tuning.OutcomeWeights.UpgradePositiveEffectValuePerPoint;
+            if (value <= 0)
+            {
+                continue;
+            }
+
+            double effectMultiplier = key.Kind switch
+            {
+                EffectKind.GainEnergy => 5.0d,
+                EffectKind.DrawCards => 4.0d,
+                EffectKind.ApplyPower => 2.0d,
+                EffectKind.DealDamage => 0.8d,
+                EffectKind.GainBlock => 0.8d,
+                _ => tuning.OutcomeWeights.UpgradePositiveEffectValuePerPoint
+            };
+            double effectScore = value * effectMultiplier;
+            score += effectScore;
+            reasons.Add($"upgrade {key.Kind}+{value} x{effectMultiplier:F1}={effectScore:F1}");
         }
 
         if (spec.Retain == true)
