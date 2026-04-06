@@ -29,14 +29,14 @@ internal static class AiTeammateTestMapPatches
     ];
     private static readonly Func<PotionModel>[] HumanTestMapPotionFactories =
     [
-        static () => ModelDb.Potion<EnergyPotion>().ToMutable(),
-        static () => ModelDb.Potion<EnergyPotion>().ToMutable(),
-        static () => ModelDb.Potion<EnergyPotion>().ToMutable(),
-        static () => ModelDb.Potion<EnergyPotion>().ToMutable(),
-        static () => ModelDb.Potion<EnergyPotion>().ToMutable(),
-        static () => ModelDb.Potion<EnergyPotion>().ToMutable(),
-        static () => ModelDb.Potion<EnergyPotion>().ToMutable(),
-        static () => ModelDb.Potion<EnergyPotion>().ToMutable()
+        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
+        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
+        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
+        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
+        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
+        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
+        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
+        static () => ModelDb.Potion<FoulPotion>().ToMutable()
     ];
 
     [HarmonyPatch(typeof(ActModel), nameof(ActModel.CreateMap))]
@@ -140,6 +140,11 @@ internal static class AiTeammateTestMapPatches
 
     private static EventModel? GetForcedTestMapEvent(MapCoord? coord)
     {
+        if (AiTeammateTestActMap.IsTabletOfTruthCoord(coord))
+        {
+            return ModelDb.Event<TabletOfTruth>();
+        }
+
         if (AiTeammateTestActMap.IsAromaOfChaosCoord(coord))
         {
             return ModelDb.Event<AromaOfChaos>();
