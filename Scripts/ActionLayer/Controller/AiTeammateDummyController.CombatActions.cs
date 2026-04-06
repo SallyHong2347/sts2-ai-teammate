@@ -241,7 +241,9 @@ internal sealed partial class AiTeammateDummyController
                     WaitForQueueSettle = true
                 });
             },
-            deduplicationKey: $"card:{GetCardInstanceId(card)}"));
+            deduplicationKey: ShouldExpandCardTargets(card.TargetType)
+                ? $"card:{GetCardInstanceId(card)}:target:{GetTargetId(executionTarget)}"
+                : $"card:{GetCardInstanceId(card)}"));
         return actionId;
     }
 

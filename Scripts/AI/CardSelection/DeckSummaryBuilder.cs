@@ -56,8 +56,8 @@ internal static class DeckSummaryBuilder
 
     private static bool IsScalingCard(ResolvedCardView card)
     {
-        int persistentStrength = Math.Max(0, card.GetSelfStrengthAmount() - card.GetSelfTemporaryStrengthAmount());
-        int persistentDexterity = Math.Max(0, card.GetSelfDexterityAmount() - card.GetSelfTemporaryDexterityAmount());
+        int persistentStrength = Math.Max(0, card.GetTotalStrengthAmount() - card.GetTotalTemporaryStrengthAmount());
+        int persistentDexterity = Math.Max(0, card.GetTotalDexterityAmount() - card.GetTotalTemporaryDexterityAmount());
         return card.Type == MegaCrit.Sts2.Core.Entities.Cards.CardType.Power ||
                persistentStrength > 0 ||
                persistentDexterity > 0 ||

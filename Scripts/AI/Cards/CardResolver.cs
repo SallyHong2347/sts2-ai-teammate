@@ -470,7 +470,7 @@ internal sealed class CardResolver : ICardResolver
         effects.Add(new NormalizedEffectDescriptor
         {
             Kind = EffectKind.ApplyPower,
-            TargetScope = GuessPowerTargetScope(liveCard.TargetType, powerId),
+            TargetScope = MapTargetScope(liveCard.TargetType),
             Amount = amount,
             AppliedPowerId = powerId,
             DurationHint = DurationHint.Unknown,
@@ -590,13 +590,4 @@ internal sealed class CardResolver : ICardResolver
         };
     }
 
-    private static TargetScope GuessPowerTargetScope(TargetType targetType, string powerId)
-    {
-        return powerId switch
-        {
-            "Strength" or "Dexterity" when targetType is TargetType.Self or TargetType.AnyPlayer or TargetType.AnyAlly => TargetScope.Self,
-            "Strength" or "Dexterity" => TargetScope.Self,
-            _ => MapTargetScope(targetType)
-        };
-    }
 }

@@ -59,7 +59,8 @@
       "remainingEnergyPenalty": 18,
       "remainingAffordableActionsPenalty": 24,
       "endTurnWhenSkippingPotionsBonus": 24,
-      "endTurnWhileOtherActionsExistPenalty": 10000
+      "endTurnWhileOtherActionsExistPenalty": 10000,
+      "selfTargetPreferenceBonus": 6
     },
     "riskProfile": {
       "survivalWeight": 1.0,

@@ -95,6 +95,7 @@ These adjust how much the AI values buffs and debuffs when planning ahead across
 | `remainingAffordableActionsPenalty` | 24 | How much the AI dislikes ending with playable cards still in hand |
 | `endTurnWhenSkippingPotionsBonus` | 24 | Bonus for ending turn when no potions are worth using |
 | `endTurnWhileOtherActionsExistPenalty` | 10000 | Prevents the AI from ending the turn when it still has good actions |
+| `selfTargetPreferenceBonus` | 6 | When the AI can target itself or an ally with a buff/resource card, this bonus is added to the self-target score. Higher values make the AI prefer buffing itself over allies. |
 
 ### `combat.riskProfile` - Aggression vs defense personality
 

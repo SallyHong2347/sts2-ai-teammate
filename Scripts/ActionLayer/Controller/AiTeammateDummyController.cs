@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Entities.Actions;
+using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.GameActions;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
@@ -43,6 +44,11 @@ internal sealed partial class AiTeammateDummyController
     private int _lastCombatRoundWithInitialStagger = -1;
     private PendingIssuedActionSettlement? _pendingIssuedActionSettlement;
     private AiTimingTuning? _timingConfig;
+    private bool _endTurnReevaluationRequested;
+    private int _committedEndTurnRound = -1;
+    private int _lastUndoEndTurnRound = -1;
+    private Player? _subscribedPlayer;
+    private CardPile? _subscribedHandPile;
 
     public AiTeammateDummyController(int slotIndex, ulong playerId, CharacterModel character)
     {
@@ -69,6 +75,11 @@ internal sealed partial class AiTeammateDummyController
             return;
         }
 
+        if (TryUndoCommittedEndTurn())
+        {
+            return;
+        }
+
         if (TryWaitForIssuedActionSettlement())
         {
             return;
@@ -83,7 +94,7 @@ internal sealed partial class AiTeammateDummyController
         List<AiTeammateAvailableAction> decisionActions = BuildDecisionActions(availableActions);
         bool isCombatDecision = TryGetControlledPlayer(out Player promptPlayer, out _)
             && IsCombatDecisionWindow(promptPlayer);
-        ResetCompletedEndTurnTrackingIfNeeded(isCombatDecision ? promptPlayer : null, isCombatDecision);
+        ResetCombatTrackingIfNeeded(promptPlayer, isCombatDecision);
         string actionSetFingerprint = decisionActions.Count > 0
             ? BuildActionSetFingerprint(decisionActions)
             : string.Empty;
@@ -200,10 +211,15 @@ internal sealed partial class AiTeammateDummyController
 
     private static bool IsCombatDecisionWindow(Player player)
     {
+        return IsInCombatPlayPhase(player) &&
+               !MegaCrit.Sts2.Core.Combat.CombatManager.Instance.IsPlayerReadyToEndTurn(player);
+    }
+
+    private static bool IsInCombatPlayPhase(Player player)
+    {
         return MegaCrit.Sts2.Core.Combat.CombatManager.Instance.IsInProgress &&
                MegaCrit.Sts2.Core.Combat.CombatManager.Instance.IsPlayPhase &&
-               player.Creature.CombatState?.CurrentSide == player.Creature.Side &&
-               !MegaCrit.Sts2.Core.Combat.CombatManager.Instance.IsPlayerReadyToEndTurn(player);
+               player.Creature.CombatState?.CurrentSide == player.Creature.Side;
     }
 
     private List<AiTeammateAvailableAction> BuildDecisionActions(IReadOnlyList<AiTeammateAvailableAction> actions)
@@ -241,6 +257,12 @@ internal sealed partial class AiTeammateDummyController
             if (executionResult.HasTrackedGameAction)
             {
                 BeginIssuedActionSettlement(action, executionResult);
+                if (IsCombatEndTurnAction(action.ActionId) &&
+                    TryGetControlledPlayer(out Player endTurnPlayer, out _))
+                {
+                    _committedEndTurnRound = endTurnPlayer.Creature.CombatState?.RoundNumber ?? -1;
+                }
+
                 Log.Info($"[AITeammate] Player={PlayerId} issued actionId={action.ActionId} tracking={DescribeTrackedAction(executionResult.GameAction!)} queueSettle={executionResult.WaitForQueueSettle}");
             }
             else
@@ -285,6 +307,13 @@ internal sealed partial class AiTeammateDummyController
     {
         if (string.IsNullOrEmpty(_pendingEndTurnActionId))
         {
+            return false;
+        }
+
+        if (_endTurnReevaluationRequested)
+        {
+            _endTurnReevaluationRequested = false;
+            ClearPendingEndTurn("reevaluation_event");
             return false;
         }
 
@@ -380,6 +409,71 @@ internal sealed partial class AiTeammateDummyController
         _pendingEndTurnCommitAtUtc = DateTime.MinValue;
     }
 
+    private bool TryUndoCommittedEndTurn()
+    {
+        if (!_endTurnReevaluationRequested || _committedEndTurnRound < 0)
+        {
+            return false;
+        }
+
+        if (!TryGetControlledPlayer(out Player player, out _))
+        {
+            _endTurnReevaluationRequested = false;
+            return false;
+        }
+
+        if (!MegaCrit.Sts2.Core.Combat.CombatManager.Instance.IsInProgress ||
+            !MegaCrit.Sts2.Core.Combat.CombatManager.Instance.IsPlayPhase)
+        {
+            _endTurnReevaluationRequested = false;
+            _committedEndTurnRound = -1;
+            return false;
+        }
+
+        if (!MegaCrit.Sts2.Core.Combat.CombatManager.Instance.IsPlayerReadyToEndTurn(player))
+        {
+            _endTurnReevaluationRequested = false;
+            _committedEndTurnRound = -1;
+            return false;
+        }
+
+        if (MegaCrit.Sts2.Core.Combat.CombatManager.Instance.AllPlayersReadyToEndTurn())
+        {
+            Log.Info($"[AITeammate] Player={PlayerId} cannot undo end turn: all players already ready, turn end is irreversible");
+            _endTurnReevaluationRequested = false;
+            _committedEndTurnRound = -1;
+            return false;
+        }
+
+        int currentRound = player.Creature.CombatState?.RoundNumber ?? -1;
+        if (currentRound != _committedEndTurnRound)
+        {
+            _endTurnReevaluationRequested = false;
+            _committedEndTurnRound = -1;
+            return false;
+        }
+
+        if (currentRound == _lastUndoEndTurnRound)
+        {
+            Log.Info($"[AITeammate] Player={PlayerId} suppressing repeated undo end turn for round={currentRound}");
+            _endTurnReevaluationRequested = false;
+            _committedEndTurnRound = -1;
+            return false;
+        }
+
+        Log.Info($"[AITeammate] Player={PlayerId} undoing committed end turn round={_committedEndTurnRound} via UndoEndPlayerTurnAction");
+        UndoEndPlayerTurnAction undoAction = new(player, _committedEndTurnRound);
+        RunManager.Instance.ActionQueueSynchronizer.RequestEnqueue(undoAction);
+
+        _lastUndoEndTurnRound = _committedEndTurnRound;
+        _committedEndTurnRound = -1;
+        _endTurnReevaluationRequested = false;
+        _pendingIssuedActionSettlement = null;
+        _lastCompletedEndTurnRound = -1;
+        _nextDecisionAtUtc = DateTime.UtcNow + PostSettleGraceInterval;
+        return true;
+    }
+
     private string BuildDecisionRequestId()
     {
         return $"player_{PlayerId}_request_{DateTime.UtcNow.Ticks}";
@@ -415,20 +509,108 @@ internal sealed partial class AiTeammateDummyController
         return true;
     }
 
-    private void ResetCompletedEndTurnTrackingIfNeeded(Player? player, bool isCombatDecision)
+    private void ResetCombatTrackingIfNeeded(Player? player, bool isCombatDecision)
     {
-        if (!isCombatDecision || player?.Creature?.CombatState == null)
+        bool inPlayPhase = player != null &&
+                           player.Creature?.CombatState != null &&
+                           IsInCombatPlayPhase(player);
+
+        if (!inPlayPhase)
         {
             _lastCompletedEndTurnRound = -1;
             _lastCombatRoundWithInitialStagger = -1;
+            _committedEndTurnRound = -1;
+            _lastUndoEndTurnRound = -1;
+            _endTurnReevaluationRequested = false;
+            UnsubscribeCombatStateEvents();
             return;
         }
 
-        int currentRound = player.Creature.CombatState.RoundNumber;
+        if (_subscribedPlayer == null && player!.PlayerCombatState != null)
+        {
+            SubscribeCombatStateEvents(player);
+            Log.Info($"[AITeammate] Player={PlayerId} subscribed to combat state events");
+        }
+
+        int currentRound = player!.Creature!.CombatState!.RoundNumber;
+        if (!isCombatDecision)
+        {
+            return;
+        }
+
         if (currentRound != _lastCompletedEndTurnRound)
         {
             _lastCompletedEndTurnRound = -1;
         }
+
+        if (_committedEndTurnRound >= 0 && currentRound != _committedEndTurnRound)
+        {
+            _committedEndTurnRound = -1;
+            _endTurnReevaluationRequested = false;
+        }
+    }
+
+    private void SubscribeCombatStateEvents(Player player)
+    {
+        UnsubscribeCombatStateEvents();
+        _subscribedPlayer = player;
+        player.PlayerCombatState!.EnergyChanged += OnEnergyChanged;
+        try
+        {
+            _subscribedHandPile = PileType.Hand.GetPile(player);
+            _subscribedHandPile.CardAdded += OnHandCardAdded;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"[AITeammate] Player={PlayerId} failed to subscribe to hand pile: {ex.Message}");
+            _subscribedHandPile = null;
+        }
+    }
+
+    private void UnsubscribeCombatStateEvents()
+    {
+        if (_subscribedPlayer != null)
+        {
+            _subscribedPlayer.PlayerCombatState!.EnergyChanged -= OnEnergyChanged;
+            _subscribedPlayer = null;
+        }
+
+        if (_subscribedHandPile != null)
+        {
+            _subscribedHandPile.CardAdded -= OnHandCardAdded;
+            _subscribedHandPile = null;
+        }
+    }
+
+    private void OnEnergyChanged(int oldEnergy, int newEnergy)
+    {
+        if (newEnergy > oldEnergy)
+        {
+            RequestEndTurnReevaluation("energy_gained");
+        }
+    }
+
+    private void OnHandCardAdded(CardModel card)
+    {
+        RequestEndTurnReevaluation("hand_card_added");
+    }
+
+    private void RequestEndTurnReevaluation(string reason)
+    {
+        bool hasPendingEndTurn = !string.IsNullOrEmpty(_pendingEndTurnActionId);
+        bool hasCommittedEndTurn = _committedEndTurnRound >= 0;
+        if (!hasPendingEndTurn && !hasCommittedEndTurn)
+        {
+            return;
+        }
+
+        if (_endTurnReevaluationRequested)
+        {
+            return;
+        }
+
+        _endTurnReevaluationRequested = true;
+        Log.Info($"[AITeammate] Player={PlayerId} end-turn reevaluation requested reason={reason} pendingEndTurn={hasPendingEndTurn} committedEndTurnRound={_committedEndTurnRound}");
     }
 
     private bool TryApplyInitialCombatDecisionStagger(

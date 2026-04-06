@@ -8,6 +8,8 @@ Compatibility note: the current `beta-402` branch is updated for the Slay the Sp
 
 ## Recent updates
 
+- Ally-targeted card scoring now evaluates the target's state (energy, hand size, incoming damage) instead of scoring all targets identically, with configurable `selfTargetPreferenceBonus`
+- Healing potion scoring now caps at effective healing and scores 0 for full-HP targets
 - Exposed `lowHealthEmergencyThreshold`, `graveDangerFloor`, `graveDangerHpFraction` in combat risk profile and `allyDamagePenaltyPerAlly` in potion combat config
 - Added configurable `timing.actionIntervalMs` to control the delay between AI card plays (default 0, range 0-2000ms)
 - Doubled action settlement and queue settlement timeouts for better handling of long card animations

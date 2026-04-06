@@ -642,7 +642,7 @@ internal sealed class CardCatalogBuilder
         effects.Add(new NormalizedEffectDescriptor
         {
             Kind = EffectKind.ApplyPower,
-            TargetScope = GuessPowerTargetScope(targetType, powerId),
+            TargetScope = MapTargetScope(targetType),
             Amount = amount,
             AppliedPowerId = powerId,
             DurationHint = isTemporaryBuff ? DurationHint.ThisTurn : DurationHint.Unknown,
@@ -674,14 +674,6 @@ internal sealed class CardCatalogBuilder
         };
     }
 
-    private static TargetScope GuessPowerTargetScope(TargetType targetType, string powerId)
-    {
-        return powerId switch
-        {
-            "Strength" or "Dexterity" when targetType is TargetType.Self or TargetType.AnyPlayer or TargetType.AnyAlly => TargetScope.Self,
-            _ => MapTargetScope(targetType)
-        };
-    }
 
     private sealed class CardSnapshot
     {

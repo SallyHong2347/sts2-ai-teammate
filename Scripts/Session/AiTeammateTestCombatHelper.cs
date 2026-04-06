@@ -36,13 +36,17 @@ internal static class AiTeammateTestCombatHelper
                 ", ",
                 player.PotionSlots.Select(static potion => potion?.Id.Entry ?? "empty"));
             int overclockCopies = player.Deck.Cards.Count(static card => card.Id.Entry == ModelDb.Card<Overclock>().Id.Entry);
+            int believeInYouCopies = player.Deck.Cards.Count(static card => card.Id.Entry == ModelDb.Card<BelieveInYou>().Id.Entry);
             string overclockCatalogStatus = CardCatalogRepository.Shared.TryGetStatus(ModelDb.Card<Overclock>().Id.Entry, out CardCatalogBuildStatus overclockStatus)
                 ? overclockStatus.ToString()
+                : "Missing";
+            string believeInYouCatalogStatus = CardCatalogRepository.Shared.TryGetStatus(ModelDb.Card<BelieveInYou>().Id.Entry, out CardCatalogBuildStatus believeInYouStatus)
+                ? believeInYouStatus.ToString()
                 : "Missing";
             string burnCatalogStatus = CardCatalogRepository.Shared.TryGetStatus(ModelDb.Card<Burn>().Id.Entry, out CardCatalogBuildStatus burnStatus)
                 ? burnStatus.ToString()
                 : "Missing";
-            Log.Info($"[AITeammate] Prepared test-map combat key={combatKey} player={player.NetId} enemies=[{enemySummary}] potions=[{potionSummary}] overclockCopies={overclockCopies} overclockCatalogStatus={overclockCatalogStatus} burnCatalogStatus={burnCatalogStatus}");
+            Log.Info($"[AITeammate] Prepared test-map combat key={combatKey} player={player.NetId} enemies=[{enemySummary}] potions=[{potionSummary}] overclockCopies={overclockCopies} believeInYouCopies={believeInYouCopies} overclockCatalogStatus={overclockCatalogStatus} believeInYouCatalogStatus={believeInYouCatalogStatus} burnCatalogStatus={burnCatalogStatus}");
         }
     }
 

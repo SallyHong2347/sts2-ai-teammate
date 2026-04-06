@@ -79,6 +79,7 @@ internal sealed class DeterministicCombatContextBuilder
                 Player = ally.Player!,
                 Creature = ally,
                 IsActor = ally.Player!.NetId == player.NetId,
+                HandSize = GetSafeHandSize(ally.Player!),
                 IncomingDamage = Math.Max(0, allyIncomingDamage)
             };
         }
@@ -219,6 +220,19 @@ internal sealed class DeterministicCombatContextBuilder
         {
             Log.Warn($"[AITeammate][ReactiveContext] Failed to read DisplayAmount for power={power.Id.Entry}: {ex.Message}");
             return fallbackAmount;
+        }
+    }
+
+    private static int GetSafeHandSize(Player player)
+    {
+        try
+        {
+            return PileType.Hand.GetPile(player).Cards.Count;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"[AITeammate][CombatContext] Failed to read hand size for player={player.NetId}: {ex.Message}");
+            return 0;
         }
     }
 
