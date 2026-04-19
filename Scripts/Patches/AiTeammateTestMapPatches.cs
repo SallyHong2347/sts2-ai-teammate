@@ -1,5 +1,7 @@
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Map;
 using MegaCrit.Sts2.Core.Entities.Creatures;
@@ -15,7 +17,9 @@ namespace AITeammate.Scripts;
 
 internal static class AiTeammateTestMapPatches
 {
-    private const int TargetHumanBelieveInYouCopies = 3;
+    // TEST-MAP: 5 copies seeded so the Believe-in-You-unready repro can cycle
+    // through multiple copies in the same turn.
+    private const int TargetHumanBelieveInYouCopies = 5;
     private static readonly Func<PotionModel>[] TestMapPotionFactories =
     [
         static () => ModelDb.Potion<VulnerablePotion>().ToMutable(),
@@ -38,6 +42,24 @@ internal static class AiTeammateTestMapPatches
         static () => ModelDb.Potion<FoulPotion>().ToMutable(),
         static () => ModelDb.Potion<FoulPotion>().ToMutable()
     ];
+
+    // TEST-MAP: 10-card draw for Believe in You repro. Applies to every
+    // player (human + AI teammates) at the start of each of their turns.
+    // Outside the test map the original value is returned unchanged.
+    [HarmonyPatch(typeof(Hook), nameof(Hook.ModifyHandDraw))]
+    private static class HookModifyHandDrawTestMapPatch
+    {
+        private static void Postfix(Player player, ref decimal __result)
+        {
+            RunState? runState = RunManager.Instance.DebugOnlyGetState();
+            if (!AiTeammateSessionRegistry.ShouldUseTestMap(runState))
+            {
+                return;
+            }
+
+            __result = 10m;
+        }
+    }
 
     [HarmonyPatch(typeof(ActModel), nameof(ActModel.CreateMap))]
     private static class ActModelCreateMapPatch
