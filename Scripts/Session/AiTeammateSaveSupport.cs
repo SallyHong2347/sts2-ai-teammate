@@ -237,8 +237,8 @@ internal static class AiTeammateSaveSupport
                 RunHistoryUtilities.CreateRunHistoryEntry(savedRun.SaveData, victory: false, isAbandoned: true, savedRun.SaveData.PlatformType);
                 if (savedRun.SaveData.DailyTime.HasValue)
                 {
-                    ulong localPlayerId = PlatformUtil.GetLocalPlayerId(savedRun.SaveData.PlatformType);
-                    int score = ScoreUtility.CalculateScore(savedRun.SaveData, localPlayerId, won: false);
+                    // 4.16: ScoreUtility.CalculateScore dropped the per-player id parameter.
+                    int score = ScoreUtility.CalculateScore(savedRun.SaveData, won: false);
                     TaskHelper.RunSafely(DailyRunUtility.UploadScore(savedRun.SaveData.DailyTime.Value, score, savedRun.SaveData.Players));
                 }
             }
