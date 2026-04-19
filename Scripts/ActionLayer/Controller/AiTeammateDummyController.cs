@@ -283,6 +283,10 @@ internal sealed partial class AiTeammateDummyController
                     TryGetControlledPlayer(out Player endTurnPlayer, out _))
                 {
                     _committedEndTurnRound = endTurnPlayer.Creature.CombatState?.RoundNumber ?? -1;
+                    // A fresh end-turn commit re-arms the undo path: otherwise _lastUndoEndTurnRound
+                    // would block every subsequent undo within the same round (e.g. a 2nd Believe in You
+                    // played after the teammate re-readied).
+                    _lastUndoEndTurnRound = -1;
                 }
 
                 Log.Info($"[AITeammate] Player={PlayerId} issued actionId={action.ActionId} tracking={DescribeTrackedAction(executionResult.GameAction!)} queueSettle={executionResult.WaitForQueueSettle}");
