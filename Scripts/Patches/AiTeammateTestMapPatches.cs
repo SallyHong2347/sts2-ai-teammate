@@ -33,14 +33,14 @@ internal static class AiTeammateTestMapPatches
     ];
     private static readonly Func<PotionModel>[] HumanTestMapPotionFactories =
     [
-        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
-        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
-        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
-        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
-        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
-        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
-        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
-        static () => ModelDb.Potion<FoulPotion>().ToMutable()
+        static () => ModelDb.Potion<SwiftPotion>().ToMutable(),
+        static () => ModelDb.Potion<SwiftPotion>().ToMutable(),
+        static () => ModelDb.Potion<SwiftPotion>().ToMutable(),
+        static () => ModelDb.Potion<SwiftPotion>().ToMutable(),
+        static () => ModelDb.Potion<SwiftPotion>().ToMutable(),
+        static () => ModelDb.Potion<SwiftPotion>().ToMutable(),
+        static () => ModelDb.Potion<SwiftPotion>().ToMutable(),
+        static () => ModelDb.Potion<SwiftPotion>().ToMutable()
     ];
 
     // TEST-MAP: 10-card draw for Believe in You repro. Applies to every
