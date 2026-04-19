@@ -407,7 +407,8 @@ public partial class AiTeammateCharacterSetupScreen
         HideInviteControls(_remoteLobbyPlayerContainer);
     }
 
-    public void PlayerChanged(LobbyPlayer player)
+    // 4.16: IStartRunLobbyListener.PlayerChanged gained an isRandomCharacterResolution parameter.
+    public void PlayerChanged(LobbyPlayer player, bool isRandomCharacterResolution)
     {
         HandlePlayerChanged(player);
     }

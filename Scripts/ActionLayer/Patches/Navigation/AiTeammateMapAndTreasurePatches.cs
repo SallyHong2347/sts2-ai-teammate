@@ -17,7 +17,8 @@ internal static class AiTeammateMapAndTreasurePatches
     [HarmonyPatch(typeof(MapSelectionSynchronizer), nameof(MapSelectionSynchronizer.PlayerVotedForMapCoord))]
     private static class MapSelectionSynchronizerPatch
     {
-        private static void Postfix(Player player, RunLocation source, MapVote? destination)
+        // 4.16: MapSelectionSynchronizer.PlayerVotedForMapCoord source parameter moved from RunLocation to MapLocation.
+        private static void Postfix(Player player, MapLocation source, MapVote? destination)
         {
             AiTeammateSessionState? session = AiTeammateSessionRegistry.Current;
             if (session == null || player.NetId != session.HostPlayerId)
@@ -73,8 +74,9 @@ internal static class AiTeammateMapAndTreasurePatches
                     continue;
                 }
 
-                int? playerVote = __instance.GetPlayerVote(aiPlayer);
-                if (playerVote.HasValue)
+                // 4.16: GetPlayerVote now returns a PlayerVote object (with voteReceived/index) instead of int?.
+                var playerVote = __instance.GetPlayerVote(aiPlayer);
+                if (playerVote.voteReceived)
                 {
                     continue;
                 }

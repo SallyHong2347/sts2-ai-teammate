@@ -3,7 +3,7 @@
   "name": "sts2AITeammate",
   "author": "Sally",
   "description": "AI Teammate is an experimental Slay the Spire 2 mod that adds AI-controlled teammates to a local fake-multiplayer run.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "has_pck": false,
   "has_dll": true,
   "dependencies": [],

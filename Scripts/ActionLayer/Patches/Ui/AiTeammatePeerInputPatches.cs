@@ -169,10 +169,16 @@ internal static class AiTeammatePeerInputStateSync
         }
 
         MegaCrit.Sts2.Core.Entities.Players.Player? player = RunManager.Instance.DebugOnlyGetState()?.GetPlayer(playerId);
+        // 4.16: TreasureRoomRelicSynchronizer.GetPlayerVote now returns a PlayerVote object; the relic index
+        // lives on .index and is only meaningful when voteReceived is true and the player did not skip.
         int? voteIndex = null;
         if (player != null)
         {
-            voteIndex = RunManager.Instance.TreasureRoomRelicSynchronizer.GetPlayerVote(player);
+            var vote = RunManager.Instance.TreasureRoomRelicSynchronizer.GetPlayerVote(player);
+            if (vote != null && vote.voteReceived)
+            {
+                voteIndex = vote.index;
+            }
         }
 
         if (!voteIndex.HasValue)

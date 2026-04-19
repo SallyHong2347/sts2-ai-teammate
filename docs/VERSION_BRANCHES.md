@@ -7,7 +7,7 @@ This repository maintains separate branches for different Slay the Spire 2 publi
 - `beta-326`
   Targets the public beta build updated on March 26.
 - `default-314`
-  Targets the public default build updated on March 14.
+  Currently tracks the public default build updated on April 16, 2026. (The branch name is historical — it was first cut against the March 14 build and has since been rolled forward to later default releases.)
 
 ## Why the split exists
 

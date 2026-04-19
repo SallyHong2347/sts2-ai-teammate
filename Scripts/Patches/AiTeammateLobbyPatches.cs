@@ -10,7 +10,9 @@ using MegaCrit.Sts2.Core.Models.Acts;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
 using MegaCrit.Sts2.Core.Multiplayer.Game.Lobby;
 using MegaCrit.Sts2.Core.Multiplayer.Messages.Lobby;
+using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Platform;
+using MegaCrit.Sts2.Core.Random;
 using MegaCrit.Sts2.Core.Saves;
 using MegaCrit.Sts2.Core.Unlocks;
 
@@ -32,7 +34,10 @@ internal static class AiTeammatePlatformUtilGetPlayerNamePatch
     }
 }
 
-[HarmonyPatch(typeof(StartRunLobby), "BeginRun")]
+// 4.16: StartRunLobby's private begin-run entry point renamed from `BeginRun` to `BeginRunForAllPlayers`
+// (and the inner local-execution half was extracted into `BeginRunLocally`). We continue to intercept the
+// outer entry point so we still own the message send plus the listener dispatch.
+[HarmonyPatch(typeof(StartRunLobby), "BeginRunForAllPlayers")]
 internal static class AiTeammateStartRunLobbyBeginRunPatch
 {
     [HarmonyPrefix]
@@ -43,7 +48,7 @@ internal static class AiTeammateStartRunLobbyBeginRunPatch
             return true;
         }
 
-        Log.Info("[AITeammate] Intercepting StartRunLobby.BeginRun for local AI teammate loopback.");
+        Log.Info("[AITeammate] Intercepting StartRunLobby.BeginRunForAllPlayers for local AI teammate loopback.");
 
         MethodInfo? updatePreferredAscensionMethod = AccessTools.Method(typeof(StartRunLobby), "UpdatePreferredAscension");
         updatePreferredAscensionMethod?.Invoke(__instance, Array.Empty<object>());
@@ -59,14 +64,18 @@ internal static class AiTeammateStartRunLobbyBeginRunPatch
         __instance.NetService.SendMessage(beginRunMessage);
 
         UnlockState unlockState = GetUnlockState(__instance);
-        List<ActModel> acts = ActModel.GetRandomList(seed, unlockState, __instance.NetService.Type.IsMultiplayer()).ToList();
+        // 4.16: ActModel.GetRandomList now takes an Rng (constructed from the seed) instead of the raw seed string.
+        // This mirrors the construction previously done inside GetRandomList itself.
+        Rng rng = new Rng((uint)StringHelper.GetDeterministicHashCode(seed));
+        List<ActModel> acts = ActModel.GetRandomList(rng, unlockState, __instance.NetService.Type.IsMultiplayer()).ToList();
         ActModel? act1Override = GetAct1(__instance.Act1);
         if (act1Override != null)
         {
             acts[0] = act1Override;
         }
 
-        AccessTools.Field(typeof(StartRunLobby), "_beginningRun")?.SetValue(__instance, true);
+        // 4.16: StartRunLobby renamed the private field `_beginningRun` to `_isBeginningRun`.
+        AccessTools.Field(typeof(StartRunLobby), "_isBeginningRun")?.SetValue(__instance, true);
         __instance.LobbyListener.BeginRun(seed, acts, modifiers);
         return false;
     }
