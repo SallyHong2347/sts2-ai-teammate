@@ -1,8 +1,10 @@
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Hooks;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Map;
 using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Encounters;
 using MegaCrit.Sts2.Core.Models.Events;
@@ -15,7 +17,9 @@ namespace AITeammate.Scripts;
 
 internal static class AiTeammateTestMapPatches
 {
-    private const int TargetHumanBelieveInYouCopies = 3;
+    // Five copies for the Believe in You repro: enough for back-to-back plays
+    // after the teammate re-readies, to exercise the second-undo path.
+    private const int TargetHumanBelieveInYouCopies = 5;
     private static readonly Func<PotionModel>[] TestMapPotionFactories =
     [
         static () => ModelDb.Potion<VulnerablePotion>().ToMutable(),
@@ -29,15 +33,33 @@ internal static class AiTeammateTestMapPatches
     ];
     private static readonly Func<PotionModel>[] HumanTestMapPotionFactories =
     [
-        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
-        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
-        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
-        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
-        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
-        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
-        static () => ModelDb.Potion<FoulPotion>().ToMutable(),
-        static () => ModelDb.Potion<FoulPotion>().ToMutable()
+        static () => ModelDb.Potion<SwiftPotion>().ToMutable(),
+        static () => ModelDb.Potion<SwiftPotion>().ToMutable(),
+        static () => ModelDb.Potion<SwiftPotion>().ToMutable(),
+        static () => ModelDb.Potion<SwiftPotion>().ToMutable(),
+        static () => ModelDb.Potion<SwiftPotion>().ToMutable(),
+        static () => ModelDb.Potion<SwiftPotion>().ToMutable(),
+        static () => ModelDb.Potion<SwiftPotion>().ToMutable(),
+        static () => ModelDb.Potion<SwiftPotion>().ToMutable()
     ];
+
+    // TEST-MAP: 10-card draw for Believe in You repro. Applies to every
+    // player (human + AI teammates) at the start of each of their turns.
+    // Outside the test map the original value is returned unchanged.
+    [HarmonyPatch(typeof(Hook), nameof(Hook.ModifyHandDraw))]
+    private static class HookModifyHandDrawTestMapPatch
+    {
+        private static void Postfix(Player player, ref decimal __result)
+        {
+            RunState? runState = RunManager.Instance.DebugOnlyGetState();
+            if (!AiTeammateSessionRegistry.ShouldUseTestMap(runState))
+            {
+                return;
+            }
+
+            __result = 10m;
+        }
+    }
 
     [HarmonyPatch(typeof(ActModel), nameof(ActModel.CreateMap))]
     private static class ActModelCreateMapPatch
